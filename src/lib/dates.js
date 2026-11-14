@@ -36,3 +36,42 @@ export function tenureParts(joinDate) {
   if (months < 0) { years -= 1; months += 12; }
   return { years, months, days };
 }
+
+export function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
+// Senin sebagai awal minggu
+export function weekStart(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = (d.getDay() + 6) % 7;
+  return addDays(dateStr, -day);
+}
+
+export function formatDay(dateStr, lang, opts) {
+  const d = new Date(dateStr + "T00:00:00");
+  return new Intl.DateTimeFormat(lang === "id" ? "id-ID" : "en-GB", opts || { weekday: "short", day: "numeric", month: "short" }).format(d);
+}
+
+export function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+export function deadlineStatus(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const now = new Date();
+  if (d < now) return "overdue";
+  if (d.toDateString() === now.toDateString()) return "today";
+  return "later";
+}
+
+export function formatDeadline(iso, lang) {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat(lang === "id" ? "id-ID" : "en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+}

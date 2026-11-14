@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Check, Plus, Target, Radio, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
-import { todayStr, monthStr, monthRange, formatRupiah } from "@/lib/dates";
+import { todayStr, monthStr, monthRange, formatRupiah, deadlineStatus, formatDeadline } from "@/lib/dates";
 import { friendlyError } from "@/lib/supabase";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
@@ -133,7 +133,14 @@ export default function HomePage() {
                 <button onClick={() => toggleTask(task)} aria-label="Selesai" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/30">
                   <Check size={12} className="opacity-0" />
                 </button>
-                <span className="flex-1 text-sm">{task.title}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{task.title}</span>
+                  {task.deadline && (
+                    <span className={"block text-[11px] " + (deadlineStatus(task.deadline) === "overdue" ? "text-red-300" : "text-zinc-400")}>
+                      {deadlineStatus(task.deadline) === "overdue" ? t("overdue") + " · " : ""}{formatDeadline(task.deadline, lang)}
+                    </span>
+                  )}
+                </span>
                 <span className={"rounded-full px-2 py-0.5 text-[10px] " + (task.priority === "urgent" ? "bg-red-400/15 text-red-300" : "bg-white/10 text-zinc-300")}>
                   {task.priority === "urgent" ? t("todo_urgent") : t("todo_normal")}
                 </span>

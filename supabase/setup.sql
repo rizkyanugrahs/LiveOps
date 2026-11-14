@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.0.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.1.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -85,6 +85,9 @@ alter table public.profiles add column if not exists employee_id text;
 alter table public.profiles add column if not exists join_date date;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists language text not null default 'en';
+alter table public.tasks add column if not exists image_path text;
+alter table public.products add column if not exists image_path text;
+alter table public.gallery_photos add column if not exists image_path text;
 
 -- 8. Aturan unik -----------------------------------------------------
 create unique index if not exists shifts_user_date_uidx on public.shifts (user_id, shift_date);
@@ -112,9 +115,30 @@ begin
 end
 $$;
 
--- 11. Izin akses -----------------------------------------------------
+-- 11. Penyimpanan foto (privat, tiap pengguna hanya akses foldernya sendiri)
+insert into storage.buckets (id, name, public)
+values ('liveops-files', 'liveops-files', false)
+on conflict (id) do nothing;
+
+drop policy if exists "liveops_files_select" on storage.objects;
+create policy "liveops_files_select" on storage.objects for select to authenticated
+  using (bucket_id = 'liveops-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "liveops_files_insert" on storage.objects;
+create policy "liveops_files_insert" on storage.objects for insert to authenticated
+  with check (bucket_id = 'liveops-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "liveops_files_update" on storage.objects;
+create policy "liveops_files_update" on storage.objects for update to authenticated
+  using (bucket_id = 'liveops-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "liveops_files_delete" on storage.objects;
+create policy "liveops_files_delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'liveops-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- 12. Izin akses -----------------------------------------------------
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 
--- 12. Muat ulang skema agar langsung dikenali ------------------------
+-- 13. Muat ulang skema agar langsung dikenali ------------------------
 notify pgrst, 'reload schema';

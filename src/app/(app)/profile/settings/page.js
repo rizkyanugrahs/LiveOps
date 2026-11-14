@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError, pinToCredentials } from "@/lib/supabase";
 import { APP_VERSION, DEVELOPER } from "@/lib/version";
+import { BUCKET } from "@/lib/storage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -70,6 +71,10 @@ export default function SettingsPage() {
   async function deleteAll() {
     setConfirm("");
     setMsg({ type: "", text: "" });
+    for (const folder of ["tasks", "products", "gallery"]) {
+      const { data: files } = await supabase.storage.from(BUCKET).list(user.id + "/" + folder, { limit: 1000 });
+      if (files && files.length) await supabase.storage.from(BUCKET).remove(files.map((f) => user.id + "/" + folder + "/" + f.name));
+    }
     for (const table of DATA_TABLES) {
       const { error } = await supabase.from(table).delete().eq("user_id", user.id);
       if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }

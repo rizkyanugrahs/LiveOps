@@ -44,6 +44,8 @@ export function friendlyError(error) {
   else if (/anonymous/i.test(msg)) friendly = "Mode Guest belum diaktifkan di Supabase. Aktifkan 'Allow anonymous sign-ins' di pengaturan Authentication.";
   else if (/email.*confirm|confirm.*email/i.test(msg)) friendly = "Supabase masih meminta konfirmasi email. Matikan 'Confirm email' di pengaturan Authentication.";
   else if (/relation .* does not exist|schema cache|could not find/i.test(msg)) friendly = "Database belum lengkap. Jalankan file SQL setup terbaru di Supabase.";
+  else if (/duplicate key|unique constraint/i.test(msg)) friendly = "Data untuk tanggal itu sudah ada. Edit data yang lama saja ya.";
+  else if (/bucket not found/i.test(msg)) friendly = "Tempat penyimpanan foto belum dibuat. Jalankan file SQL setup terbaru di Supabase.";
   else if (/failed to fetch|network/i.test(msg)) friendly = "Tidak bisa terhubung. Periksa internet atau alamat Supabase di Vercel.";
   return friendly + " (Detail: " + msg + ")";
 }
