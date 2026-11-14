@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.1.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.2.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -97,6 +97,7 @@ create unique index if not exists gmv_targets_user_month_uidx on public.gmv_targ
 -- 9. Indeks untuk kecepatan ------------------------------------------
 create index if not exists tasks_user_done_idx on public.tasks (user_id, is_done);
 create index if not exists products_user_name_idx on public.products (user_id, name);
+create index if not exists products_user_category_idx on public.products (user_id, category);
 
 -- 10. Keamanan: data hanya bisa dilihat pemiliknya (Row Level Security)
 do $$
