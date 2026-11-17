@@ -4,10 +4,11 @@ import Link from "next/link";
 import { Check, Plus, Target, Radio, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
-import { todayStr, monthStr, monthRange, formatRupiah, deadlineStatus, formatDeadline } from "@/lib/dates";
+import { todayStr, monthStr, monthRange, formatRupiah, deadlineStatus, formatDeadline, daysToPayday } from "@/lib/dates";
 import { friendlyError } from "@/lib/supabase";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
+import GmvReport from "@/components/GmvReport";
 
 const SHIFTS = ["off", "morning", "afternoon", "night"];
 
@@ -25,6 +26,7 @@ export default function HomePage() {
   const [targetInput, setTargetInput] = useState("");
   const [logAmount, setLogAmount] = useState("");
   const [logDate, setLogDate] = useState(todayStr());
+  const [gmvKey, setGmvKey] = useState(0);
 
   const load = useCallback(async () => {
     if (!supabase || !user) return;
@@ -78,6 +80,7 @@ export default function HomePage() {
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     setPanel(""); setLogAmount("");
     setMsg({ type: "ok", text: t("gmv_saved") });
+    setGmvKey((k) => k + 1);
     load();
   }
 
@@ -86,6 +89,7 @@ export default function HomePage() {
   const name = profile && profile.full_name ? profile.full_name.split(" ")[0] : "";
   const pct = target > 0 ? Math.min(100, Math.round((achieved / target) * 100)) : 0;
   const shiftLabel = shift ? t("shift_" + shift) : t("shift_not_set");
+  const toPayday = daysToPayday(profile && profile.payday);
 
   if (!ready) {
     return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-zinc-400" /></div>;
@@ -98,6 +102,14 @@ export default function HomePage() {
           <div className="flex items-center gap-2"><Radio size={20} /><h1 className="text-2xl font-semibold tracking-tight">LiveOps</h1></div>
           <p className="mt-1 text-sm text-zinc-400">{greeting}{name ? ", " + name : ""}</p>
         </div>
+        {toPayday === null ? (
+          <Link href="/profile/settings" className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-400">{t("payday_set")}</Link>
+        ) : (
+          <div className="glass rounded-2xl px-3 py-1.5 text-center">
+            <p className="text-lg font-semibold leading-tight">{toPayday === 0 ? t("payday_today") : t("payday_chip").replace("{n}", toPayday)}</p>
+            <p className="text-[10px] uppercase tracking-wide text-zinc-400">{t("payday_label")}</p>
+          </div>
+        )}
       </header>
 
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
@@ -186,6 +198,8 @@ export default function HomePage() {
           </div>
         )}
       </GlassCard>
+
+      <GmvReport refreshKey={gmvKey} onChanged={load} />
     </div>
   );
 }

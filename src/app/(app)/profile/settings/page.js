@@ -13,7 +13,7 @@ import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos"];
+const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos", "leave_entries"];
 
 export default function SettingsPage() {
   const { supabase, user, profile, isGuest, refreshProfile } = useAuth();
@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [joinDate, setJoinDate] = useState("");
+  const [contractEnd, setContractEnd] = useState("");
+  const [payday, setPayday] = useState("");
   const [msg, setMsg] = useState({ type: "", text: "" });
   const [confirm, setConfirm] = useState("");
   const [linkPin, setLinkPin] = useState("");
@@ -32,16 +34,25 @@ export default function SettingsPage() {
       setFullName(profile.full_name || "");
       setEmployeeId(profile.employee_id || "");
       setJoinDate(profile.join_date || "");
+      setContractEnd(profile.contract_end || "");
+      setPayday(profile.payday ? String(profile.payday) : "");
     }
   }, [profile]);
 
   async function saveProfile() {
     setMsg({ type: "", text: "" });
+    const paydayNum = payday.trim() === "" ? null : Number(payday);
+    if (paydayNum !== null && (!Number.isInteger(paydayNum) || paydayNum < 1 || paydayNum > 31)) {
+      setMsg({ type: "error", text: t("payday_invalid") });
+      return;
+    }
     const { error } = await supabase.from("profiles").upsert({
       user_id: user.id,
       full_name: fullName.trim() || null,
       employee_id: employeeId.trim() || null,
       join_date: joinDate || null,
+      contract_end: contractEnd || null,
+      payday: paydayNum,
       language: lang,
     }, { onConflict: "user_id" });
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
@@ -147,6 +158,13 @@ export default function SettingsPage() {
         </label>
         <label className="block text-xs text-zinc-400">{t("profile_join")}
           <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputCls + " mt-1"} />
+        </label>
+        <label className="block text-xs text-zinc-400">{t("contract_setting")}
+          <input type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} className={inputCls + " mt-1"} />
+        </label>
+        <label className="block text-xs text-zinc-400">{t("payday_setting")}
+          <input type="number" inputMode="numeric" min={1} max={31} value={payday} onChange={(e) => setPayday(e.target.value)} className={inputCls + " mt-1"} />
+          <span className="mt-1 block text-[11px] text-zinc-500">{t("payday_hint")}</span>
         </label>
         <button onClick={saveProfile} className="w-full rounded-xl bg-white py-2.5 text-sm font-medium text-black">{t("save")}</button>
       </GlassCard>

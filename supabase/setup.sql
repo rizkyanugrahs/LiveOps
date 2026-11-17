@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.3.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.4.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -79,6 +79,18 @@ create table if not exists public.gallery_photos (
   created_at timestamptz not null default now()
 );
 
+-- 6b. Cuti: saldo = total top-up dikurangi total pemakaian ------------
+create table if not exists public.leave_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  kind text not null default 'usage',
+  entry_date date not null,
+  end_date date,
+  days numeric not null default 1,
+  note text,
+  created_at timestamptz not null default now()
+);
+
 -- 7. Kolom tambahan (aman jika sudah ada) ----------------------------
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists employee_id text;
@@ -89,6 +101,8 @@ alter table public.tasks add column if not exists image_path text;
 alter table public.products add column if not exists image_path text;
 alter table public.gallery_photos add column if not exists image_path text;
 alter table public.profiles add column if not exists avatar_path text;
+alter table public.profiles add column if not exists contract_end date;
+alter table public.profiles add column if not exists payday smallint;
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
@@ -100,13 +114,14 @@ create unique index if not exists gmv_targets_user_month_uidx on public.gmv_targ
 create index if not exists tasks_user_done_idx on public.tasks (user_id, is_done);
 create index if not exists products_user_name_idx on public.products (user_id, name);
 create index if not exists products_user_category_idx on public.products (user_id, category);
+create index if not exists leave_entries_user_date_idx on public.leave_entries (user_id, entry_date);
 
 -- 10. Keamanan: data hanya bisa dilihat pemiliknya (Row Level Security)
 do $$
 declare
   t text;
 begin
-  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos']
+  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', 'own_' || t, t);

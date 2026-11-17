@@ -1,19 +1,39 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, ChevronRight, BarChart3, UserRound } from "lucide-react";
+import { Settings, ChevronRight, CalendarDays, UserRound } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
-import { tenureParts } from "@/lib/dates";
+import { tenureParts, remainingParts, formatParts, formatDays } from "@/lib/dates";
 import { APP_VERSION } from "@/lib/version";
 import GlassCard from "@/components/GlassCard";
 import SignedImage from "@/components/SignedImage";
 import GallerySection from "@/components/GallerySection";
 
 export default function ProfilePage() {
-  const { profile, isGuest } = useAuth();
-  const { t } = useI18n();
+  const { supabase, profile, isGuest } = useAuth();
+  const { t, lang } = useI18n();
+  const [balance, setBalance] = useState(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.from("leave_entries").select("kind,days").then(({ data, error }) => {
+      if (error || !data) return;
+      setBalance(data.reduce((sum, r) => sum + (r.kind === "topup" ? 1 : -1) * Number(r.days || 0), 0));
+    });
+  }, [supabase]);
+
+  const labels = { years: t("tenure_years"), months: t("tenure_months"), days: t("tenure_days") };
   const tenure = tenureParts(profile && profile.join_date);
+  const contract = remainingParts(profile && profile.contract_end);
   const name = profile && profile.full_name ? profile.full_name : isGuest ? "Guest" : "LiveOps";
+
+  let contractText = t("set_in_settings");
+  if (contract) {
+    if (contract.expired) contractText = t("contract_expired");
+    else if (contract.today) contractText = t("contract_today");
+    else contractText = formatParts(contract, labels);
+  }
 
   return (
     <div className="space-y-4">
@@ -29,34 +49,33 @@ export default function ProfilePage() {
         </div>
       </GlassCard>
 
-      <GlassCard>
-        <p className="text-xs uppercase tracking-wide text-zinc-400">{t("profile_tenure")}</p>
-        {tenure ? (
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            {[["years", tenure.years, "tenure_years"], ["months", tenure.months, "tenure_months"], ["days", tenure.days, "tenure_days"]].map(([k, v, label]) => (
-              <div key={k} className="rounded-xl border border-white/10 bg-black/20 py-3">
-                <p className="text-2xl font-semibold">{v}</p>
-                <p className="text-xs text-zinc-400">{t(label)}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-zinc-400">{t("tenure_unset")}</p>
-        )}
-      </GlassCard>
-
-      <Link href="/profile/gmv" className="glass flex items-center justify-between rounded-2xl p-4">
+      <Link href="/profile/leave" className="glass flex items-center justify-between rounded-2xl p-4">
         <span className="flex items-center gap-3">
-          <BarChart3 size={20} className="text-zinc-300" />
+          <CalendarDays size={20} className="text-zinc-300" />
           <span>
-            <span className="block text-sm font-medium">{t("gmvr_title")}</span>
-            <span className="block text-xs text-zinc-400">{t("gmv_open")}</span>
+            <span className="block text-sm font-medium">{t("leave_title")}</span>
+            <span className="block text-xs text-zinc-400">{t("leave_card_hint")}</span>
           </span>
         </span>
-        <ChevronRight size={18} className="text-zinc-500" />
+        <span className="flex items-center gap-2">
+          <span className={"text-lg font-semibold " + (balance !== null && balance < 0 ? "text-red-300" : "")}>{balance === null ? "-" : formatDays(balance, lang) + " " + t("leave_unit")}</span>
+          <ChevronRight size={18} className="text-zinc-500" />
+        </span>
       </Link>
 
       <GallerySection />
+
+      <GlassCard className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-zinc-400">{t("profile_tenure")}</p>
+          <p className={"text-right text-sm font-semibold " + (tenure ? "" : "font-normal text-zinc-500")}>{tenure ? formatParts(tenure, labels) : t("set_in_settings")}</p>
+        </div>
+        <div className="h-px bg-white/10" />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-zinc-400">{t("contract_label")}</p>
+          <p className={"text-right text-sm font-semibold " + (!contract ? "font-normal text-zinc-500" : contract.expired ? "text-red-300" : "")}>{contractText}</p>
+        </div>
+      </GlassCard>
 
       <Link href="/profile/settings" className="glass flex items-center justify-between rounded-2xl p-4">
         <span className="flex items-center gap-3 text-sm font-medium"><Settings size={20} className="text-zinc-300" />{t("settings")}</span>

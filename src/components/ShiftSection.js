@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Loader2, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Loader2, Trash2, Download } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -9,12 +9,13 @@ import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import Sheet from "@/components/Sheet";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { drawShiftImage } from "@/lib/shiftImage";
 
 const TYPES = ["off", "morning", "afternoon", "night"];
 const DOT = { off: "bg-zinc-500", morning: "bg-amber-300", afternoon: "bg-sky-300", night: "bg-indigo-300" };
 
 export default function ShiftSection() {
-  const { supabase, user } = useAuth();
+  const { supabase, user, profile } = useAuth();
   const { t, lang } = useI18n();
   const [view, setView] = useState("week");
   const [start, setStart] = useState(weekStart(todayStr()));
@@ -77,6 +78,62 @@ export default function ShiftSection() {
     load();
   }
 
+  function downloadPng() {
+    setMsg({ type: "", text: "" });
+    let rowsOut = [];
+    let subtitle = "";
+    let fileName = "";
+    if (view === "week") {
+      subtitle = formatDay(start, lang, { day: "numeric", month: "short" }) + " – " + formatDay(addDays(start, 6), lang, { day: "numeric", month: "short", year: "numeric" });
+      fileName = "jadwal-shift-" + start + ".png";
+      rowsOut = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => {
+        const r = rows.find((x) => x.shift_date === d);
+        return {
+          day: formatDay(d, lang, { weekday: "long" }),
+          dateText: formatDay(d, lang, { day: "numeric", month: "short", year: "numeric" }),
+          type: r ? r.shift_type : null,
+          typeLabel: r ? t("shift_" + r.shift_type) : "",
+          note: r && r.note ? r.note : "",
+          highlight: d === todayStr(),
+        };
+      });
+    } else {
+      if (!rows.length) { setMsg({ type: "error", text: t("shift_nothing_to_download") }); return; }
+      subtitle = formatDay(month + "-01", lang, { month: "long", year: "numeric" });
+      fileName = "jadwal-shift-" + month + ".png";
+      rowsOut = rows.map((r) => ({
+        day: formatDay(r.shift_date, lang, { weekday: "long" }),
+        dateText: formatDay(r.shift_date, lang, { day: "numeric", month: "short", year: "numeric" }),
+        type: r.shift_type,
+        typeLabel: t("shift_" + r.shift_type),
+        note: r.note || "",
+        highlight: r.shift_date === todayStr(),
+      }));
+    }
+    try {
+      const canvas = drawShiftImage((w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }, {
+        title: t("shift_image_title"),
+        subtitle,
+        name: profile && profile.full_name ? profile.full_name : "",
+        rows: rowsOut,
+        footer: t("shift_image_footer"),
+      });
+      canvas.toBlob((blob) => {
+        if (!blob) { setMsg({ type: "error", text: t("shift_image_failed") }); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, "image/png");
+    } catch (e) {
+      setMsg({ type: "error", text: t("shift_image_failed") + " (" + (e.message || e) + ")" });
+    }
+  }
+
   const today = todayStr();
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const byDate = Object.fromEntries(rows.map((r) => [r.shift_date, r]));
@@ -86,10 +143,11 @@ export default function ShiftSection() {
     <div className="space-y-4">
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="flex gap-2">
         {[["week", "shift_week"], ["table", "shift_table"]].map(([k, label]) => (
-          <button key={k} onClick={() => setView(k)} className={"rounded-xl border py-2 text-xs " + (view === k ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t(label)}</button>
+          <button key={k} onClick={() => setView(k)} className={"flex-1 rounded-xl border py-2 text-xs " + (view === k ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t(label)}</button>
         ))}
+        <button onClick={downloadPng} disabled={loading} className="flex items-center gap-1 rounded-xl border border-white/10 px-3 text-xs text-zinc-200 disabled:opacity-40"><Download size={14} />{t("shift_download")}</button>
       </div>
 
       {view === "week" ? (
