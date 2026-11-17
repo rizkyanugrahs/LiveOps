@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
-import { Settings, ChevronRight, Image as ImageIcon, BarChart3, UserRound } from "lucide-react";
+import { Settings, ChevronRight, BarChart3, UserRound } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { tenureParts } from "@/lib/dates";
 import { APP_VERSION } from "@/lib/version";
 import GlassCard from "@/components/GlassCard";
+import SignedImage from "@/components/SignedImage";
+import GallerySection from "@/components/GallerySection";
 
 export default function ProfilePage() {
   const { profile, isGuest } = useAuth();
@@ -18,9 +20,9 @@ export default function ProfilePage() {
       <h1 className="text-2xl font-semibold tracking-tight">{t("profile_title")}</h1>
 
       <GlassCard className="flex items-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5">
-          {profile && profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : <UserRound size={28} className="text-zinc-400" />}
-        </div>
+        <Link href="/profile/settings" aria-label={t("avatar_change")} className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5">
+          {profile && profile.avatar_path ? <SignedImage path={profile.avatar_path} className="h-full w-full object-cover" /> : <UserRound size={28} className="text-zinc-400" />}
+        </Link>
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold">{name}</p>
           <p className="text-sm text-zinc-400">{t("profile_empid")}: {profile && profile.employee_id ? profile.employee_id : "-"}</p>
@@ -43,21 +45,18 @@ export default function ProfilePage() {
         )}
       </GlassCard>
 
-      <GlassCard className="flex items-center gap-3">
-        <BarChart3 size={20} className="text-zinc-400" />
-        <div>
-          <p className="text-sm font-medium">{t("gmv_report_title")}</p>
-          <p className="text-xs text-zinc-400">{t("gmv_report_soon")}</p>
-        </div>
-      </GlassCard>
+      <Link href="/profile/gmv" className="glass flex items-center justify-between rounded-2xl p-4">
+        <span className="flex items-center gap-3">
+          <BarChart3 size={20} className="text-zinc-300" />
+          <span>
+            <span className="block text-sm font-medium">{t("gmvr_title")}</span>
+            <span className="block text-xs text-zinc-400">{t("gmv_open")}</span>
+          </span>
+        </span>
+        <ChevronRight size={18} className="text-zinc-500" />
+      </Link>
 
-      <GlassCard className="flex items-center gap-3">
-        <ImageIcon size={20} className="text-zinc-400" />
-        <div>
-          <p className="text-sm font-medium">{t("gallery_title")}</p>
-          <p className="text-xs text-zinc-400">{t("gallery_soon")}</p>
-        </div>
-      </GlassCard>
+      <GallerySection />
 
       <Link href="/profile/settings" className="glass flex items-center justify-between rounded-2xl p-4">
         <span className="flex items-center gap-3 text-sm font-medium"><Settings size={20} className="text-zinc-300" />{t("settings")}</span>

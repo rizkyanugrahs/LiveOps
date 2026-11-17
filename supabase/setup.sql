@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.2.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.3.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -88,6 +88,8 @@ alter table public.profiles add column if not exists language text not null defa
 alter table public.tasks add column if not exists image_path text;
 alter table public.products add column if not exists image_path text;
 alter table public.gallery_photos add column if not exists image_path text;
+alter table public.profiles add column if not exists avatar_path text;
+alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
 create unique index if not exists shifts_user_date_uidx on public.shifts (user_id, shift_date);
