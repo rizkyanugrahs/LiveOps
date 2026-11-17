@@ -2,6 +2,25 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { getSupabase, isConfigured } from "@/lib/supabase";
 import { useI18n } from "@/lib/i18n";
+import { DEFAULT_PARTNERS, DEFAULT_PARTNER_NAME } from "@/lib/shifts";
+
+let seeding = false;
+
+async function seedPartners(supabase, uid) {
+  if (seeding) return false;
+  seeding = true;
+  try {
+    const rows = DEFAULT_PARTNERS.map((name, i) => ({ user_id: uid, name, is_default: name === DEFAULT_PARTNER_NAME, sort_order: i }));
+    const { error } = await supabase.from("partners").upsert(rows, { onConflict: "user_id,name", ignoreDuplicates: true });
+    if (error) return false;
+    const { error: e2 } = await supabase.from("profiles").update({ partners_seeded: true }).eq("user_id", uid);
+    return !e2;
+  } catch (e) {
+    return false;
+  } finally {
+    seeding = false;
+  }
+}
 
 const AuthContext = createContext({ user: null, profile: null, loading: true, configured: true, isGuest: false, refreshProfile: async () => {}, supabase: null });
 
@@ -20,6 +39,10 @@ export function AuthProvider({ children }) {
       await supabase.from("profiles").upsert({ user_id: uid }, { onConflict: "user_id" });
       const res = await supabase.from("profiles").select("*").eq("user_id", uid).maybeSingle();
       data = res.data;
+    }
+    if (data && data.partners_seeded === false) {
+      const ok = await seedPartners(supabase, uid);
+      if (ok) data = { ...data, partners_seeded: true };
     }
     if (data) {
       setProfile(data);

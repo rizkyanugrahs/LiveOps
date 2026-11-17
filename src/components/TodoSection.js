@@ -123,6 +123,8 @@ export default function TodoSection() {
     <div className="space-y-4">
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
 
+      <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-medium text-black"><Plus size={16} />{t("task_add")}</button>
+
       <div className="grid grid-cols-3 gap-2">
         {[["active", "filter_active"], ["done", "filter_done"], ["all", "filter_all"]].map(([k, label]) => (
           <button key={k} onClick={() => setFilter(k)} className={"rounded-xl border py-2 text-xs " + (filter === k ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t(label)}</button>
@@ -169,9 +171,6 @@ export default function TodoSection() {
         </ul>
       )}
 
-      <button onClick={openAdd} aria-label={t("task_add")} className="fixed bottom-28 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-xl active:scale-95">
-        <Plus size={26} />
-      </button>
 
       <Sheet open={open} title={form.id ? t("task_edit") : t("task_add")} onClose={() => !saving && setOpen(false)}>
         <div className="space-y-4">

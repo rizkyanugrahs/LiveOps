@@ -2,18 +2,19 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LogOut, Trash2, UserRound, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, LogOut, Trash2, UserRound, Camera, Loader2, Users, ChevronRight } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError, pinToCredentials } from "@/lib/supabase";
 import { APP_VERSION, DEVELOPER } from "@/lib/version";
-import { BUCKET, uploadImage, removeImage } from "@/lib/storage";
+import { BUCKET, uploadBlob, removeImage } from "@/lib/storage";
+import PhotoEditor from "@/components/PhotoEditor";
 import SignedImage from "@/components/SignedImage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos", "leave_entries"];
+const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos", "leave_entries", "partners"];
 
 export default function SettingsPage() {
   const { supabase, user, profile, isGuest, refreshProfile } = useAuth();
@@ -28,6 +29,7 @@ export default function SettingsPage() {
   const [confirm, setConfirm] = useState("");
   const [linkPin, setLinkPin] = useState("");
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
 
   useEffect(() => {
     if (profile) {
@@ -60,14 +62,17 @@ export default function SettingsPage() {
     setMsg({ type: "ok", text: t("saved") });
   }
 
-  async function changeAvatar(e) {
+  function pickAvatar(e) {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";
-    if (!f) return;
-    setMsg({ type: "", text: "" });
+    if (f) { setMsg({ type: "", text: "" }); setAvatarFile(f); }
+  }
+
+  async function saveAvatar(blob) {
+    setAvatarFile(null);
     setAvatarBusy(true);
     try {
-      const path = await uploadImage(supabase, user.id, "avatar", f);
+      const path = await uploadBlob(supabase, user.id, "avatar", blob);
       const { error } = await supabase.from("profiles").upsert({ user_id: user.id, avatar_path: path }, { onConflict: "user_id" });
       if (error) { await removeImage(supabase, path); throw error; }
       if (profile && profile.avatar_path) await removeImage(supabase, profile.avatar_path);
@@ -123,7 +128,7 @@ export default function SettingsPage() {
       const { error } = await supabase.from(table).delete().eq("user_id", user.id);
       if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     }
-    await supabase.from("profiles").update({ avatar_path: null }).eq("user_id", user.id);
+    await supabase.from("profiles").update({ avatar_path: null, partners_seeded: false }).eq("user_id", user.id);
     await refreshProfile();
     setMsg({ type: "ok", text: t("delete_all_done") });
   }
@@ -146,7 +151,7 @@ export default function SettingsPage() {
             {avatarBusy ? <Loader2 className="animate-spin text-zinc-400" /> : profile && profile.avatar_path ? <SignedImage path={profile.avatar_path} className="h-full w-full object-cover" /> : <UserRound size={28} className="text-zinc-400" />}
           </div>
           <div className="flex flex-col gap-2">
-            <label className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200"><Camera size={14} />{t("avatar_change")}<input type="file" accept="image/*" onChange={changeAvatar} className="hidden" /></label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200"><Camera size={14} />{t("avatar_change")}<input type="file" accept="image/*" onChange={pickAvatar} className="hidden" /></label>
             {profile && profile.avatar_path && <button onClick={removeAvatar} className="text-left text-xs text-red-300">{t("avatar_remove")}</button>}
           </div>
         </div>
@@ -187,6 +192,11 @@ export default function SettingsPage() {
         </GlassCard>
       )}
 
+      <Link href="/profile/partners" className="glass flex items-center justify-between rounded-2xl p-4">
+        <span className="flex items-center gap-3 text-sm font-medium"><Users size={18} className="text-zinc-300" />{t("partners_title")}</span>
+        <ChevronRight size={18} className="text-zinc-500" />
+      </Link>
+
       <GlassCard className="space-y-3">
         <button onClick={() => setConfirm("logout")} className="flex w-full items-center gap-3 text-sm"><LogOut size={18} className="text-zinc-300" />{t("logout")}</button>
         <div className="h-px bg-white/10" />
@@ -205,6 +215,7 @@ export default function SettingsPage() {
         </div>
       </GlassCard>
 
+      {avatarFile && <PhotoEditor file={avatarFile} circle maxSide={640} onConfirm={saveAvatar} onCancel={() => setAvatarFile(null)} />}
       <ConfirmDialog open={confirm === "logout"} message={t("logout_confirm")} confirmLabel={t("logout")} onConfirm={logout} onCancel={() => setConfirm("")} />
       <ConfirmDialog open={confirm === "delete"} danger message={t("delete_all_confirm")} confirmLabel={t("delete")} onConfirm={deleteAll} onCancel={() => setConfirm("")} />
     </div>

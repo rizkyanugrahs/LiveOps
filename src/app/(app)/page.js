@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Plus, Target, Radio, Loader2 } from "lucide-react";
+import { Check, Plus, Target, Radio, Loader2, ChevronRight } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { todayStr, monthStr, monthRange, formatRupiah, deadlineStatus, formatDeadline, daysToPayday } from "@/lib/dates";
@@ -9,19 +9,44 @@ import { friendlyError } from "@/lib/supabase";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import GmvReport from "@/components/GmvReport";
+import { PLATFORMS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff } from "@/lib/shifts";
 
-const SHIFTS = ["off", "morning", "afternoon", "night"];
+
+function TodayShift({ row, t }) {
+  if (!row) return <p className="mt-1 text-xl font-semibold">{t("shift_not_set")}</p>;
+  if (isOff(row)) return <p className="mt-1 text-xl font-semibold">{t("shift_kind_off")}</p>;
+  const sessions = sessionList(row);
+  if (!sessions.length) return <p className="mt-1 text-xl font-semibold">{t("shift_" + row.shift_type)}</p>;
+  const brk = breakMinutes(row);
+  const team = teamList(row);
+  return (
+    <div className="mt-2 space-y-1.5">
+      {sessions.map((s, i) => {
+        const p = PLATFORMS[s.platform] || PLATFORMS.shopee;
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <span className={"rounded-full px-2.5 py-0.5 text-[11px] font-medium " + p.cls}>{p.label}</span>
+            <span className="text-lg font-semibold">{fmtTime(s.start)} - {fmtTime(s.end)}</span>
+            {i === 0 && brk ? <span className="text-xs text-zinc-500">· {t("shift_break")} {fmtDuration(brk, { h: t("shift_unit_h"), m: t("shift_unit_m") })}</span> : null}
+          </div>
+        );
+      })}
+      {(row.partner || team.length > 0) && (
+        <p className="text-xs text-zinc-400">{row.partner || ""}{row.partner && team.length ? " + " : ""}{team.join(", ")}</p>
+      )}
+    </div>
+  );
+}
 
 export default function HomePage() {
   const { supabase, user, profile } = useAuth();
   const { t, lang } = useI18n();
   const [ready, setReady] = useState(false);
-  const [shift, setShift] = useState(null);
+  const [shiftRow, setShiftRow] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [achieved, setAchieved] = useState(0);
   const [target, setTarget] = useState(0);
   const [msg, setMsg] = useState({ type: "", text: "" });
-  const [showShiftPicker, setShowShiftPicker] = useState(false);
   const [panel, setPanel] = useState(""); // "", "target", "log"
   const [targetInput, setTargetInput] = useState("");
   const [logAmount, setLogAmount] = useState("");
@@ -40,7 +65,7 @@ export default function HomePage() {
     ]);
     const firstError = [s, tk, g, tg].find((r) => r.error);
     if (firstError) setMsg({ type: "error", text: friendlyError(firstError.error) });
-    setShift(s.data ? s.data.shift_type : null);
+    setShiftRow(s.data || null);
     const list = (tk.data || []).sort((a, b) => (a.priority === b.priority ? 0 : a.priority === "urgent" ? -1 : 1)).slice(0, 5);
     setTasks(list);
     setAchieved((g.data || []).reduce((sum, r) => sum + Number(r.amount || 0), 0));
@@ -49,14 +74,6 @@ export default function HomePage() {
   }, [supabase, user]);
 
   useEffect(() => { load(); }, [load]);
-
-  async function chooseShift(type) {
-    setMsg({ type: "", text: "" });
-    const { error } = await supabase.from("shifts").upsert({ user_id: user.id, shift_date: todayStr(), shift_type: type }, { onConflict: "user_id,shift_date" });
-    if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
-    setShift(type);
-    setShowShiftPicker(false);
-  }
 
   async function toggleTask(task) {
     const { error } = await supabase.from("tasks").update({ is_done: true }).eq("id", task.id);
@@ -88,7 +105,6 @@ export default function HomePage() {
   const greeting = hour < 11 ? t("greeting_morning") : hour < 15 ? t("greeting_afternoon") : t("greeting_evening");
   const name = profile && profile.full_name ? profile.full_name.split(" ")[0] : "";
   const pct = target > 0 ? Math.min(100, Math.round((achieved / target) * 100)) : 0;
-  const shiftLabel = shift ? t("shift_" + shift) : t("shift_not_set");
   const toPayday = daysToPayday(profile && profile.payday);
 
   if (!ready) {
@@ -114,22 +130,15 @@ export default function HomePage() {
 
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
 
-      <GlassCard>
-        <button onClick={() => setShowShiftPicker(!showShiftPicker)} className="flex w-full items-center justify-between text-left">
-          <div>
+      <Link href="/tasks" className="block">
+        <GlassCard>
+          <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-wide text-zinc-400">{t("shift_today")}</p>
-            <p className="mt-1 text-xl font-semibold">{shiftLabel}</p>
+            <ChevronRight size={16} className="text-zinc-500" />
           </div>
-          <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300">{shift ? "✎" : "+"}</span>
-        </button>
-        {showShiftPicker && (
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {SHIFTS.map((s) => (
-              <button key={s} onClick={() => chooseShift(s)} className={"rounded-xl border py-2 text-xs " + (shift === s ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t("shift_" + s)}</button>
-            ))}
-          </div>
-        )}
-      </GlassCard>
+          <TodayShift row={shiftRow} t={t} />
+        </GlassCard>
+      </Link>
 
       <GlassCard>
         <div className="flex items-center justify-between">
@@ -199,7 +208,7 @@ export default function HomePage() {
         )}
       </GlassCard>
 
-      <GmvReport refreshKey={gmvKey} onChanged={load} />
+      <GmvReport refreshKey={gmvKey} />
     </div>
   );
 }

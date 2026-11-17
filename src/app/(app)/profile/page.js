@@ -63,8 +63,6 @@ export default function ProfilePage() {
         </span>
       </Link>
 
-      <GallerySection />
-
       <GlassCard className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-zinc-400">{t("profile_tenure")}</p>
@@ -76,6 +74,8 @@ export default function ProfilePage() {
           <p className={"text-right text-sm font-semibold " + (!contract ? "font-normal text-zinc-500" : contract.expired ? "text-red-300" : "")}>{contractText}</p>
         </div>
       </GlassCard>
+
+      <GallerySection />
 
       <Link href="/profile/settings" className="glass flex items-center justify-between rounded-2xl p-4">
         <span className="flex items-center gap-3 text-sm font-medium"><Settings size={20} className="text-zinc-300" />{t("settings")}</span>

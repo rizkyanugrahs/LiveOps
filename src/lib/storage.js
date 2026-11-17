@@ -36,3 +36,11 @@ export async function removeImage(supabase, path) {
   if (!path) return;
   await supabase.storage.from(BUCKET).remove([path]);
 }
+
+// Mengunggah foto yang sudah jadi (misalnya hasil edit) tanpa diproses ulang
+export async function uploadBlob(supabase, userId, folder, blob) {
+  const path = userId + "/" + folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".jpg";
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (error) throw error;
+  return path;
+}

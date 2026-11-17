@@ -1,21 +1,23 @@
 "use client";
-import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import TodoSection from "@/components/TodoSection";
 import ShiftSection from "@/components/ShiftSection";
 
 export default function TasksPage() {
   const { t } = useI18n();
-  const [tab, setTab] = useState("todo");
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight">{t("nav_tasks")}</h1>
-      <div className="glass grid grid-cols-2 rounded-full p-1">
-        {[["todo", "tab_todo"], ["shift", "tab_shift"]].map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className={"rounded-full py-2 text-sm transition " + (tab === k ? "bg-white font-medium text-black" : "text-zinc-400")}>{t(label)}</button>
-        ))}
-      </div>
-      {tab === "todo" ? <TodoSection /> : <ShiftSection />}
+
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400">{t("tasks_section_shift")}</h2>
+        <ShiftSection />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400">{t("tasks_section_todo")}</h2>
+        <TodoSection />
+      </section>
     </div>
   );
 }

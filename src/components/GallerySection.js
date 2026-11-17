@@ -4,13 +4,14 @@ import { Plus, Loader2, Trash2, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
-import { uploadImage, removeImage } from "@/lib/storage";
+import { uploadImage, uploadBlob, removeImage } from "@/lib/storage";
 import { todayStr, formatDay } from "@/lib/dates";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import Sheet from "@/components/Sheet";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SignedImage from "@/components/SignedImage";
+import PhotoEditor from "@/components/PhotoEditor";
 
 export default function GallerySection() {
   const { supabase, user } = useAuth();
@@ -18,7 +19,10 @@ export default function GallerySection() {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState({ type: "", text: "" });
-  const [progress, setProgress] = useState(null); // { n, m }
+  const [queue, setQueue] = useState([]); // foto yang menunggu diedit
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({ done: 0, failed: 0, lastError: "" });
+  const [uploading, setUploading] = useState(false);
   const [active, setActive] = useState(null);
   const [caption, setCaption] = useState("");
   const [takenAt, setTakenAt] = useState("");
@@ -43,30 +47,44 @@ export default function GallerySection() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function addFiles(e) {
+  function addFiles(e) {
     const files = Array.from((e.target.files || []));
     e.target.value = "";
     if (!files.length) return;
     setMsg({ type: "", text: "" });
-    let done = 0;
-    let failedCount = 0;
-    let lastError = "";
-    for (let i = 0; i < files.length; i++) {
-      setProgress({ n: i + 1, m: files.length });
-      try {
-        const path = await uploadImage(supabase, user.id, "gallery", files[i]);
-        const { error } = await supabase.from("gallery_photos").insert({ image_path: path, taken_at: todayStr() });
-        if (error) { await removeImage(supabase, path); throw error; }
-        done++;
-      } catch (err) {
-        failedCount++;
-        lastError = friendlyError(err);
-      }
+    setStats({ done: 0, failed: 0, lastError: "" });
+    setTotal(files.length);
+    setQueue(files);
+  }
+
+  // Mengunggah satu foto (hasil edit atau asli), lalu lanjut ke foto berikutnya
+  async function finishCurrent(blobOrNull) {
+    const file = queue[0];
+    setUploading(true);
+    let result = { ok: true, error: "" };
+    try {
+      const path = blobOrNull ? await uploadBlob(supabase, user.id, "gallery", blobOrNull) : await uploadImage(supabase, user.id, "gallery", file);
+      const { error } = await supabase.from("gallery_photos").insert({ image_path: path, taken_at: todayStr() });
+      if (error) { await removeImage(supabase, path); throw error; }
+    } catch (err) {
+      result = { ok: false, error: friendlyError(err) };
     }
-    setProgress(null);
-    if (failedCount) setMsg({ type: "error", text: t("photo_error") + " " + lastError });
-    else setMsg({ type: "ok", text: t("gal_saved") });
-    if (done) load();
+    setUploading(false);
+    advance(result);
+  }
+
+  function skipCurrent() { advance(null); }
+
+  function advance(result) {
+    const next = { done: stats.done + (result && result.ok ? 1 : 0), failed: stats.failed + (result && !result.ok ? 1 : 0), lastError: result && !result.ok ? result.error : stats.lastError };
+    setStats(next);
+    const rest = queue.slice(1);
+    setQueue(rest);
+    if (rest.length === 0) {
+      if (next.failed) setMsg({ type: "error", text: t("photo_error") + " " + next.lastError });
+      else if (next.done) setMsg({ type: "ok", text: t("gal_saved") });
+      if (next.done) load();
+    }
   }
 
   function openPhoto(p) {
@@ -102,13 +120,13 @@ export default function GallerySection() {
           <p className="flex items-center gap-2 text-sm font-medium"><ImageIcon size={18} className="text-zinc-300" />{t("gallery_title")}</p>
           <p className="mt-0.5 text-xs text-zinc-400">{t("gal_count").replace("{n}", photos.length)}</p>
         </div>
-        <label className={"flex cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-medium text-black " + (progress ? "pointer-events-none opacity-60" : "")}>
-          {progress ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}{t("gal_add")}
+        <label className={"flex cursor-pointer items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-medium text-black " + (queue.length ? "pointer-events-none opacity-60" : "")}>
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}{t("gal_add")}
           <input type="file" accept="image/*" multiple onChange={addFiles} className="hidden" />
         </label>
       </div>
 
-      {progress && <p className="text-xs text-zinc-400">{t("gal_uploading").replace("{n}", progress.n).replace("{m}", progress.m)}</p>}
+      {uploading && <p className="text-xs text-zinc-400">{t("uploading")}</p>}
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
 
       {loading ? (
@@ -145,6 +163,16 @@ export default function GallerySection() {
           </div>
         )}
       </Sheet>
+      {queue.length > 0 && !uploading && (
+        <PhotoEditor
+          key={queue[0].name + queue[0].size + queue.length}
+          file={queue[0]}
+          queueLabel={total > 1 ? t("photo_queue").replace("{n}", total - queue.length + 1).replace("{m}", total) : ""}
+          onConfirm={(blob) => finishCurrent(blob)}
+          onUseOriginal={() => finishCurrent(null)}
+          onCancel={skipCurrent}
+        />
+      )}
       <ConfirmDialog open={Boolean(toDelete)} danger message={t("gal_delete_confirm")} confirmLabel={t("delete")} onConfirm={doDelete} onCancel={() => setToDelete(null)} />
     </GlassCard>
   );

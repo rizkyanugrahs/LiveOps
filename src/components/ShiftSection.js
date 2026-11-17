@@ -1,21 +1,65 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Loader2, Trash2, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Loader2, Download } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
 import { todayStr, monthStr, monthRange, addDays, weekStart, formatDay } from "@/lib/dates";
+import { PLATFORMS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff } from "@/lib/shifts";
+import { drawShiftImage } from "@/lib/shiftImage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
-import Sheet from "@/components/Sheet";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { drawShiftImage } from "@/lib/shiftImage";
+import ShiftForm from "@/components/ShiftForm";
 
-const TYPES = ["off", "morning", "afternoon", "night"];
-const DOT = { off: "bg-zinc-500", morning: "bg-amber-300", afternoon: "bg-sky-300", night: "bg-indigo-300" };
+function Pill({ platform }) {
+  const p = PLATFORMS[platform] || PLATFORMS.shopee;
+  return <span className={"shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium " + p.cls}>{p.label}</span>;
+}
+
+// Isi satu hari: Off Day / dua sesi dengan platform / jadwal lama
+function ShiftSummary({ row, t }) {
+  if (!row) return <p className="text-sm text-zinc-500">{t("shift_unset")}</p>;
+  if (isOff(row)) {
+    return (
+      <div>
+        <p className="flex items-center gap-2 text-sm"><span className="h-2.5 w-2.5 rounded-full bg-zinc-500" />{t("shift_kind_off")}</p>
+        {row.note && <p className="mt-0.5 truncate text-xs text-zinc-400">{row.note}</p>}
+      </div>
+    );
+  }
+  const sessions = sessionList(row);
+  if (!sessions.length) {
+    return (
+      <div>
+        <p className="text-sm">{t("shift_" + row.shift_type)}</p>
+        {row.note && <p className="mt-0.5 truncate text-xs text-zinc-400">{row.note}</p>}
+      </div>
+    );
+  }
+  const brk = breakMinutes(row);
+  const team = teamList(row);
+  return (
+    <div className="space-y-1">
+      {sessions.map((s, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Pill platform={s.platform} />
+          <span className="text-sm font-medium">{fmtTime(s.start)} - {fmtTime(s.end)}</span>
+          {i === 0 && brk ? <span className="text-[11px] text-zinc-500">· {t("shift_break")} {fmtDuration(brk, { h: t("shift_unit_h"), m: t("shift_unit_m") })}</span> : null}
+        </div>
+      ))}
+      {(row.partner || team.length > 0) && (
+        <p className="truncate text-xs text-zinc-400">
+          {row.partner ? row.partner : ""}{row.partner && team.length ? " + " : ""}{team.length ? team.join(", ") : ""}
+        </p>
+      )}
+      {row.note && <p className="truncate text-xs text-zinc-500">{row.note}</p>}
+    </div>
+  );
+}
 
 export default function ShiftSection() {
-  const { supabase, user, profile } = useAuth();
+  const { supabase, profile } = useAuth();
   const { t, lang } = useI18n();
   const [view, setView] = useState("week");
   const [start, setStart] = useState(weekStart(todayStr()));
@@ -24,9 +68,8 @@ export default function ShiftSection() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState({ type: "", text: "" });
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ id: null, shift_date: todayStr(), shift_type: "morning", note: "" });
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [newDate, setNewDate] = useState(todayStr());
   const [toDelete, setToDelete] = useState(null);
 
   const load = useCallback(async () => {
@@ -44,34 +87,16 @@ export default function ShiftSection() {
   useEffect(() => { load(); }, [load]);
 
   function openForDate(date) {
-    const existing = rows.find((r) => r.shift_date === date);
-    if (existing) setForm({ id: existing.id, shift_date: existing.shift_date, shift_type: existing.shift_type, note: existing.note || "" });
-    else setForm({ id: null, shift_date: date, shift_type: "morning", note: "" });
-    setFormError(""); setOpen(true);
+    setEditing(rows.find((r) => r.shift_date === date) || null);
+    setNewDate(date);
+    setOpen(true);
   }
-  function openRow(row) {
-    setForm({ id: row.id, shift_date: row.shift_date, shift_type: row.shift_type, note: row.note || "" });
-    setFormError(""); setOpen(true);
-  }
-
-  async function save() {
-    if (!form.shift_date) { setFormError(t("shift_date")); return; }
-    setSaving(true); setFormError("");
-    const payload = { shift_date: form.shift_date, shift_type: form.shift_type, note: form.note.trim() || null };
-    const res = form.id
-      ? await supabase.from("shifts").update(payload).eq("id", form.id)
-      : await supabase.from("shifts").upsert({ ...payload, user_id: user.id }, { onConflict: "user_id,shift_date" });
-    setSaving(false);
-    if (res.error) { setFormError(friendlyError(res.error)); return; }
-    setOpen(false);
-    setMsg({ type: "ok", text: t("shift_saved") });
-    load();
-  }
+  function openRow(row) { setEditing(row); setNewDate(row.shift_date); setOpen(true); }
 
   async function doDelete() {
-    const row = toDelete;
+    const id = toDelete;
     setToDelete(null);
-    const { error } = await supabase.from("shifts").delete().eq("id", row.id);
+    const { error } = await supabase.from("shifts").delete().eq("id", id);
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     setOpen(false);
     setMsg({ type: "ok", text: t("shift_deleted") });
@@ -80,43 +105,40 @@ export default function ShiftSection() {
 
   function downloadPng() {
     setMsg({ type: "", text: "" });
-    let rowsOut = [];
+    let items = [];
     let subtitle = "";
     let fileName = "";
+    const dayInfo = (d, row) => ({
+      day: formatDay(d, lang, { weekday: "long" }),
+      dateText: formatDay(d, lang, { day: "numeric", month: "short", year: "numeric" }),
+      row,
+      highlight: d === todayStr(),
+    });
     if (view === "week") {
       subtitle = formatDay(start, lang, { day: "numeric", month: "short" }) + " – " + formatDay(addDays(start, 6), lang, { day: "numeric", month: "short", year: "numeric" });
       fileName = "jadwal-shift-" + start + ".png";
-      rowsOut = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => {
-        const r = rows.find((x) => x.shift_date === d);
-        return {
-          day: formatDay(d, lang, { weekday: "long" }),
-          dateText: formatDay(d, lang, { day: "numeric", month: "short", year: "numeric" }),
-          type: r ? r.shift_type : null,
-          typeLabel: r ? t("shift_" + r.shift_type) : "",
-          note: r && r.note ? r.note : "",
-          highlight: d === todayStr(),
-        };
-      });
+      items = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => dayInfo(d, rows.find((x) => x.shift_date === d) || null));
     } else {
       if (!rows.length) { setMsg({ type: "error", text: t("shift_nothing_to_download") }); return; }
       subtitle = formatDay(month + "-01", lang, { month: "long", year: "numeric" });
       fileName = "jadwal-shift-" + month + ".png";
-      rowsOut = rows.map((r) => ({
-        day: formatDay(r.shift_date, lang, { weekday: "long" }),
-        dateText: formatDay(r.shift_date, lang, { day: "numeric", month: "short", year: "numeric" }),
-        type: r.shift_type,
-        typeLabel: t("shift_" + r.shift_type),
-        note: r.note || "",
-        highlight: r.shift_date === todayStr(),
-      }));
+      items = rows.map((r) => dayInfo(r.shift_date, r));
     }
     try {
       const canvas = drawShiftImage((w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }, {
         title: t("shift_image_title"),
         subtitle,
         name: profile && profile.full_name ? profile.full_name : "",
-        rows: rowsOut,
+        items,
         footer: t("shift_image_footer"),
+        labels: {
+          partner: t("shift_partner"),
+          team: t("shift_team"),
+          off: t("shift_kind_off"),
+          breakText: t("shift_break"),
+          units: { h: t("shift_unit_h"), m: t("shift_unit_m") },
+          legacy: (type) => t("shift_" + type),
+        },
       });
       canvas.toBlob((blob) => {
         if (!blob) { setMsg({ type: "error", text: t("shift_image_failed") }); return; }
@@ -161,30 +183,18 @@ export default function ShiftSection() {
             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-zinc-400" /></div>
           ) : (
             <ul className="space-y-2">
-              {days.map((d) => {
-                const r = byDate[d];
-                return (
-                  <li key={d}>
-                    <button onClick={() => openForDate(d)} className={"glass flex w-full items-center gap-3 rounded-2xl p-3 text-left " + (d === today ? "ring-1 ring-white/40" : "")}>
-                      <div className="w-20 shrink-0">
-                        <p className="text-sm font-medium">{formatDay(d, lang, { weekday: "short" })}</p>
-                        <p className="text-xs text-zinc-400">{formatDay(d, lang, { day: "numeric", month: "short" })}</p>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        {r ? (
-                          <>
-                            <p className="flex items-center gap-2 text-sm"><span className={"h-2.5 w-2.5 rounded-full " + DOT[r.shift_type]} />{t("shift_" + r.shift_type)}</p>
-                            {r.note && <p className="mt-0.5 truncate text-xs text-zinc-400">{r.note}</p>}
-                          </>
-                        ) : (
-                          <p className="text-sm text-zinc-500">{t("shift_unset")}</p>
-                        )}
-                      </div>
-                      {d === today && <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-300">{t("shift_today_label")}</span>}
-                    </button>
-                  </li>
-                );
-              })}
+              {days.map((d) => (
+                <li key={d}>
+                  <button onClick={() => openForDate(d)} className={"glass flex w-full items-start gap-3 rounded-2xl p-3 text-left " + (d === today ? "ring-1 ring-white/40" : "")}>
+                    <div className="w-16 shrink-0">
+                      <p className="text-sm font-medium">{formatDay(d, lang, { weekday: "short" })}</p>
+                      <p className="text-xs text-zinc-400">{formatDay(d, lang, { day: "numeric", month: "short" })}</p>
+                    </div>
+                    <div className="min-w-0 flex-1"><ShiftSummary row={byDate[d]} t={t} /></div>
+                    {d === today && <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-300">{t("shift_today_label")}</span>}
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </>
@@ -194,61 +204,35 @@ export default function ShiftSection() {
             <label className="flex-1 text-xs text-zinc-400">{t("shift_month")}
               <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className={inputCls + " mt-1"} />
             </label>
-            <button onClick={() => openForDate(todayStr())} className="mt-5 flex h-[42px] items-center gap-1 rounded-xl bg-white px-4 text-sm font-medium text-black"><Plus size={16} />{t("shift_add")}</button>
+            <button onClick={() => { setEditing(null); setNewDate(todayStr()); setOpen(true); }} className="mt-5 flex h-[42px] items-center gap-1 rounded-xl bg-white px-4 text-sm font-medium text-black"><Plus size={16} />{t("shift_add")}</button>
           </div>
           {loading ? (
             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-zinc-400" /></div>
           ) : rows.length === 0 ? (
             <GlassCard className="py-10 text-center text-sm text-zinc-400">{t("shift_empty")}</GlassCard>
           ) : (
-            <div className="glass overflow-hidden rounded-2xl">
-              <table className="w-full text-sm">
-                <thead className="border-b border-white/10 text-left text-xs text-zinc-400">
-                  <tr><th className="px-3 py-2 font-normal">{t("shift_date")}</th><th className="px-3 py-2 font-normal">{t("shift_type")}</th><th className="px-3 py-2 font-normal">{t("shift_note")}</th></tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} onClick={() => openRow(r)} className="cursor-pointer border-b border-white/5 last:border-0 active:bg-white/5">
-                      <td className="whitespace-nowrap px-3 py-2.5">{formatDay(r.shift_date, lang)}</td>
-                      <td className="px-3 py-2.5"><span className="flex items-center gap-2"><span className={"h-2 w-2 rounded-full " + DOT[r.shift_type]} />{t("shift_" + r.shift_type)}</span></td>
-                      <td className="max-w-[8rem] truncate px-3 py-2.5 text-xs text-zinc-400">{r.note || ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="space-y-2">
+              {rows.map((r) => (
+                <li key={r.id}>
+                  <button onClick={() => openRow(r)} className="glass flex w-full items-start gap-3 rounded-2xl p-3 text-left">
+                    <div className="w-24 shrink-0 text-sm">{formatDay(r.shift_date, lang)}</div>
+                    <div className="min-w-0 flex-1"><ShiftSummary row={r} t={t} /></div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </>
       )}
 
-      <Sheet open={open} title={form.id ? t("shift_edit_title") : t("shift_add")} onClose={() => !saving && setOpen(false)}>
-        <div className="space-y-4">
-          <Notice>{formError}</Notice>
-          <label className="block text-xs text-zinc-400">{t("shift_date")}
-            <input type="date" value={form.shift_date} onChange={(e) => setForm({ ...form, shift_date: e.target.value })} className={inputCls + " mt-1"} />
-          </label>
-          <div>
-            <p className="text-xs text-zinc-400">{t("shift_type")}</p>
-            <div className="mt-1 grid grid-cols-4 gap-2">
-              {TYPES.map((k) => (
-                <button key={k} type="button" onClick={() => setForm({ ...form, shift_type: k })} className={"rounded-xl border py-2.5 text-xs " + (form.shift_type === k ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t("shift_" + k)}</button>
-              ))}
-            </div>
-          </div>
-          <label className="block text-xs text-zinc-400">{t("shift_note")}
-            <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder={t("shift_note_ph")} className={inputCls + " mt-1"} />
-          </label>
-          <div className="flex gap-2">
-            {form.id && (
-              <button onClick={() => setToDelete({ id: form.id })} aria-label={t("delete")} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 text-red-300"><Trash2 size={18} /></button>
-            )}
-            <button onClick={save} disabled={saving} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black disabled:opacity-60">
-              {saving && <Loader2 size={16} className="animate-spin" />}{t("save")}
-            </button>
-          </div>
-        </div>
-      </Sheet>
-
+      <ShiftForm
+        open={open}
+        initial={editing}
+        defaultDate={newDate}
+        onClose={() => setOpen(false)}
+        onSaved={() => { setOpen(false); setMsg({ type: "ok", text: t("shift_saved") }); load(); }}
+        onDelete={(id) => setToDelete(id)}
+      />
       <ConfirmDialog open={Boolean(toDelete)} danger message={t("shift_delete_confirm")} confirmLabel={t("delete")} onConfirm={doDelete} onCancel={() => setToDelete(null)} />
     </div>
   );

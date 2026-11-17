@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.4.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.5.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -91,6 +91,16 @@ create table if not exists public.leave_entries (
   created_at timestamptz not null default now()
 );
 
+-- 6c. Daftar partner live (nama yang bisa dipilih sebagai partner / tim)
+create table if not exists public.partners (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text not null,
+  is_default boolean not null default false,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 -- 7. Kolom tambahan (aman jika sudah ada) ----------------------------
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists employee_id text;
@@ -103,12 +113,22 @@ alter table public.gallery_photos add column if not exists image_path text;
 alter table public.profiles add column if not exists avatar_path text;
 alter table public.profiles add column if not exists contract_end date;
 alter table public.profiles add column if not exists payday smallint;
+alter table public.profiles add column if not exists partners_seeded boolean not null default false;
+alter table public.shifts add column if not exists session1_start text;
+alter table public.shifts add column if not exists session1_end text;
+alter table public.shifts add column if not exists session1_platform text;
+alter table public.shifts add column if not exists session2_start text;
+alter table public.shifts add column if not exists session2_end text;
+alter table public.shifts add column if not exists session2_platform text;
+alter table public.shifts add column if not exists partner text;
+alter table public.shifts add column if not exists team text[] not null default '{}'::text[];
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
 create unique index if not exists shifts_user_date_uidx on public.shifts (user_id, shift_date);
 create unique index if not exists gmv_entries_user_date_uidx on public.gmv_entries (user_id, entry_date);
 create unique index if not exists gmv_targets_user_month_uidx on public.gmv_targets (user_id, month);
+create unique index if not exists partners_user_name_uidx on public.partners (user_id, name);
 
 -- 9. Indeks untuk kecepatan ------------------------------------------
 create index if not exists tasks_user_done_idx on public.tasks (user_id, is_done);
@@ -121,7 +141,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries']
+  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries','partners']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', 'own_' || t, t);
