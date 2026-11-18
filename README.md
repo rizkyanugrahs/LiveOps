@@ -1,4 +1,4 @@
-# LiveOps v1.5.0
+# LiveOps v1.6.0
 Your Workday, Under Control.
 
 Langkah pembaruan (semua lewat browser):

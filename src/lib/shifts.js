@@ -102,3 +102,21 @@ export function sessionList(row) {
 }
 
 export function teamList(row) { return Array.isArray(row && row.team) ? row.team : []; }
+
+// Jenis cuti. Annual Leave mengurangi saldo; Sick dan Unpaid hanya tercatat di riwayat.
+export const LEAVE_TYPES = ["annual", "sick", "unpaid"];
+export const LEAVE_COLORS = { annual: "#34d399", sick: "#fb7185", unpaid: "#fbbf24" };
+export const LEAVE_CLASSES = {
+  annual: "bg-emerald-400/15 text-emerald-300",
+  sick: "bg-rose-400/15 text-rose-300",
+  unpaid: "bg-amber-300/15 text-amber-200",
+};
+
+export function isLeaveType(type) { return LEAVE_TYPES.includes(type); }
+export function isLeave(row) { return Boolean(row && isLeaveType(row.shift_type)); }
+// Off Day atau cuti: tidak ada sesi live
+export function isDayOff(row) { return isOff(row) || isLeave(row); }
+// Entri cuti yang memotong saldo (entri lama tanpa jenis dianggap Annual)
+export function deductsBalance(entry) {
+  return entry.kind === "usage" && (!entry.leave_type || entry.leave_type === "annual");
+}

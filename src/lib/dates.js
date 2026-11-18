@@ -123,3 +123,40 @@ export function formatDays(n, lang) {
   const s = String(v);
   return lang === "id" ? s.replace(".", ",") : s;
 }
+
+// ---- Tenggat tugas: tanggal wajib, jam opsional ----
+// Mengembalikan { date: "YYYY-MM-DD", time: "HH:MM" | null } dari data baru atau data lama (timestamp)
+export function taskDue(task) {
+  if (!task) return null;
+  if (task.deadline_date) return { date: task.deadline_date, time: task.deadline_time || null };
+  if (task.deadline) {
+    const d = new Date(task.deadline);
+    if (isNaN(d.getTime())) return null;
+    return { date: d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()), time: pad(d.getHours()) + ":" + pad(d.getMinutes()) };
+  }
+  return null;
+}
+
+export function dueStatus(due) {
+  if (!due) return null;
+  const today = todayStr();
+  if (due.date < today) return "overdue";
+  if (due.date > today) return "later";
+  if (due.time) {
+    const now = new Date();
+    return due.time < pad(now.getHours()) + ":" + pad(now.getMinutes()) ? "overdue" : "today";
+  }
+  return "today";
+}
+
+export function formatDue(due, lang) {
+  if (!due) return "";
+  const d = new Date(due.date + "T00:00:00");
+  const text = new Intl.DateTimeFormat(lang === "id" ? "id-ID" : "en-GB", { day: "numeric", month: "short" }).format(d);
+  return due.time ? text + ", " + due.time.replace(":", ".") : text;
+}
+
+export function sortKeyDue(task) {
+  const due = taskDue(task);
+  return due ? due.date + "T" + (due.time || "23:59") : "9999";
+}

@@ -4,35 +4,51 @@ import Link from "next/link";
 import { Check, Plus, Target, Radio, Loader2, ChevronRight } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
-import { todayStr, monthStr, monthRange, formatRupiah, deadlineStatus, formatDeadline, daysToPayday } from "@/lib/dates";
+import { todayStr, monthStr, monthRange, formatRupiah, taskDue, dueStatus, formatDue, sortKeyDue, daysToPayday } from "@/lib/dates";
 import { friendlyError } from "@/lib/supabase";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import GmvReport from "@/components/GmvReport";
-import { PLATFORMS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff } from "@/lib/shifts";
+import GmvLogForm from "@/components/GmvLogForm";
+import { PLATFORMS, LEAVE_COLORS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
 
 
 function TodayShift({ row, t }) {
-  if (!row) return <p className="mt-1 text-xl font-semibold">{t("shift_not_set")}</p>;
-  if (isOff(row)) return <p className="mt-1 text-xl font-semibold">{t("shift_kind_off")}</p>;
+  if (!row) return <p className="mt-2 text-lg font-semibold text-zinc-400">{t("shift_not_set")}</p>;
+  if (isOff(row) || isLeave(row)) {
+    const color = isLeave(row) ? LEAVE_COLORS[row.shift_type] : "#71717a";
+    return (
+      <p className="mt-2 flex items-center gap-2 text-lg font-semibold">
+        <span className="h-3 w-3 rounded-full" style={{ background: color }} />
+        {isLeave(row) ? t("leave_type_" + row.shift_type) : t("shift_kind_off")}
+      </p>
+    );
+  }
   const sessions = sessionList(row);
-  if (!sessions.length) return <p className="mt-1 text-xl font-semibold">{t("shift_" + row.shift_type)}</p>;
+  if (!sessions.length) return <p className="mt-2 text-lg font-semibold">{t("shift_" + row.shift_type)}</p>;
   const brk = breakMinutes(row);
   const team = teamList(row);
+  const people = [row.partner, ...team].filter(Boolean).join(" · ");
   return (
-    <div className="mt-2 space-y-1.5">
-      {sessions.map((s, i) => {
-        const p = PLATFORMS[s.platform] || PLATFORMS.shopee;
-        return (
-          <div key={i} className="flex items-center gap-2">
-            <span className={"rounded-full px-2.5 py-0.5 text-[11px] font-medium " + p.cls}>{p.label}</span>
-            <span className="text-lg font-semibold">{fmtTime(s.start)} - {fmtTime(s.end)}</span>
-            {i === 0 && brk ? <span className="text-xs text-zinc-500">· {t("shift_break")} {fmtDuration(brk, { h: t("shift_unit_h"), m: t("shift_unit_m") })}</span> : null}
-          </div>
-        );
-      })}
-      {(row.partner || team.length > 0) && (
-        <p className="text-xs text-zinc-400">{row.partner || ""}{row.partner && team.length ? " + " : ""}{team.join(", ")}</p>
+    <div className="mt-3">
+      <div className="grid grid-cols-2 gap-2">
+        {sessions.map((s, i) => {
+          const p = PLATFORMS[s.platform] || PLATFORMS.shopee;
+          return (
+            <div key={i} className="overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+              <div className="h-1.5" style={{ background: p.hex === "#000000" ? "rgba(255,255,255,0.55)" : p.hex }} />
+              <div className="px-3 py-2.5">
+                <p className="text-[11px] text-zinc-400">{p.label}</p>
+                <p className="text-base font-semibold leading-tight">{fmtTime(s.start)}<span className="text-zinc-500"> – </span>{fmtTime(s.end)}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {(brk || people) && (
+        <p className="mt-2 truncate text-xs text-zinc-400">
+          {brk ? t("shift_break") + " " + fmtDuration(brk, { h: t("shift_unit_h"), m: t("shift_unit_m") }) : ""}{brk && people ? "  ·  " : ""}{people}
+        </p>
       )}
     </div>
   );
@@ -49,8 +65,6 @@ export default function HomePage() {
   const [msg, setMsg] = useState({ type: "", text: "" });
   const [panel, setPanel] = useState(""); // "", "target", "log"
   const [targetInput, setTargetInput] = useState("");
-  const [logAmount, setLogAmount] = useState("");
-  const [logDate, setLogDate] = useState(todayStr());
   const [gmvKey, setGmvKey] = useState(0);
 
   const load = useCallback(async () => {
@@ -66,7 +80,7 @@ export default function HomePage() {
     const firstError = [s, tk, g, tg].find((r) => r.error);
     if (firstError) setMsg({ type: "error", text: friendlyError(firstError.error) });
     setShiftRow(s.data || null);
-    const list = (tk.data || []).sort((a, b) => (a.priority === b.priority ? 0 : a.priority === "urgent" ? -1 : 1)).slice(0, 5);
+    const list = (tk.data || []).sort((a, b) => (a.priority === b.priority ? (sortKeyDue(a) < sortKeyDue(b) ? -1 : sortKeyDue(a) > sortKeyDue(b) ? 1 : 0) : a.priority === "urgent" ? -1 : 1)).slice(0, 5);
     setTasks(list);
     setAchieved((g.data || []).reduce((sum, r) => sum + Number(r.amount || 0), 0));
     setTarget(tg.data ? Number(tg.data.target) : 0);
@@ -88,17 +102,6 @@ export default function HomePage() {
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     setTarget(value); setPanel(""); setTargetInput("");
     setMsg({ type: "ok", text: t("gmv_target_saved") });
-  }
-
-  async function saveLog() {
-    const value = Number(String(logAmount).replace(/[^0-9]/g, ""));
-    if (!value) { setMsg({ type: "error", text: lang === "id" ? "Isi jumlah GMV dengan angka lebih dari 0." : "Enter an amount above 0." }); return; }
-    const { error } = await supabase.from("gmv_entries").upsert({ user_id: user.id, entry_date: logDate, amount: value }, { onConflict: "user_id,entry_date" });
-    if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
-    setPanel(""); setLogAmount("");
-    setMsg({ type: "ok", text: t("gmv_saved") });
-    setGmvKey((k) => k + 1);
-    load();
   }
 
   const hour = new Date().getHours();
@@ -156,9 +159,9 @@ export default function HomePage() {
                 </button>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm">{task.title}</span>
-                  {task.deadline && (
-                    <span className={"block text-[11px] " + (deadlineStatus(task.deadline) === "overdue" ? "text-red-300" : "text-zinc-400")}>
-                      {deadlineStatus(task.deadline) === "overdue" ? t("overdue") + " · " : ""}{formatDeadline(task.deadline, lang)}
+                  {taskDue(task) && (
+                    <span className={"block text-[11px] " + (dueStatus(taskDue(task)) === "overdue" ? "text-red-300" : "text-zinc-400")}>
+                      {dueStatus(taskDue(task)) === "overdue" ? t("overdue") + " · " : ""}{formatDue(taskDue(task), lang)}
                     </span>
                   )}
                 </span>
@@ -199,13 +202,7 @@ export default function HomePage() {
             <button onClick={saveTarget} className="w-full rounded-xl bg-white py-2.5 text-sm font-medium text-black">{t("save")}</button>
           </div>
         )}
-        {panel === "log" && (
-          <div className="mt-3 space-y-2">
-            <input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40" />
-            <input inputMode="numeric" value={logAmount} onChange={(e) => setLogAmount(e.target.value)} placeholder={t("gmv_amount")} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40" />
-            <button onClick={saveLog} className="w-full rounded-xl bg-white py-2.5 text-sm font-medium text-black">{t("save")}</button>
-          </div>
-        )}
+        {panel === "log" && <GmvLogForm onSaved={() => { setPanel(""); setMsg({ type: "ok", text: t("gmv_saved") }); setGmvKey((k) => k + 1); load(); }} />}
       </GlassCard>
 
       <GmvReport refreshKey={gmvKey} />

@@ -1,32 +1,33 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Check, Pencil, Trash2, Image as ImageIcon, Loader2, Clock, X } from "lucide-react";
+import { Plus, Check, Pencil, Trash2, Image as ImageIcon, Loader2, Clock, X, Undo2, Download } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
 import { uploadImage, removeImage } from "@/lib/storage";
-import { toLocalInput, deadlineStatus, formatDeadline } from "@/lib/dates";
+import { taskDue, dueStatus, formatDue, sortKeyDue, todayStr, formatDay } from "@/lib/dates";
+import { drawTodoImage } from "@/lib/todoImage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import Sheet from "@/components/Sheet";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SignedImage from "@/components/SignedImage";
 
-const emptyForm = { id: null, title: "", notes: "", priority: "normal", deadline: "", image_path: null };
+const emptyForm = { id: null, title: "", notes: "", priority: "normal", date: "", time: "", image_path: null };
 
 function sortTasks(list) {
   return [...list].sort((a, b) => {
     if (a.is_done !== b.is_done) return a.is_done ? 1 : -1;
     if (a.priority !== b.priority) return a.priority === "urgent" ? -1 : 1;
-    const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-    const db = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-    if (da !== db) return da - db;
+    const ka = sortKeyDue(a);
+    const kb = sortKeyDue(b);
+    if (ka !== kb) return ka < kb ? -1 : 1;
     return new Date(b.created_at) - new Date(a.created_at);
   });
 }
 
 export default function TodoSection() {
-  const { supabase, user } = useAuth();
+  const { supabase, user, profile } = useAuth();
   const { t, lang } = useI18n();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +41,7 @@ export default function TodoSection() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [toDelete, setToDelete] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [lightbox, setLightbox] = useState("");
 
   const load = useCallback(async () => {
@@ -56,7 +58,8 @@ export default function TodoSection() {
     setForm(emptyForm); setFile(null); setPreview(""); setRemovePhoto(false); setFormError(""); setOpen(true);
   }
   function openEdit(task) {
-    setForm({ id: task.id, title: task.title, notes: task.notes || "", priority: task.priority, deadline: toLocalInput(task.deadline), image_path: task.image_path || null });
+    const due = taskDue(task);
+    setForm({ id: task.id, title: task.title, notes: task.notes || "", priority: task.priority, date: due ? due.date : "", time: due && due.time ? due.time : "", image_path: task.image_path || null });
     setFile(null); setPreview(""); setRemovePhoto(false); setFormError(""); setOpen(true);
   }
   function pickFile(e) {
@@ -80,7 +83,10 @@ export default function TodoSection() {
         title: form.title.trim(),
         notes: form.notes.trim() || null,
         priority: form.priority,
-        deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
+        // tanggal saja, atau tanggal + jam. Jam tanpa tanggal tidak dipakai.
+        deadline_date: form.date || null,
+        deadline_time: form.date && form.time ? form.time : null,
+        deadline: null,
         image_path: imagePath,
       };
       let res;
@@ -114,7 +120,61 @@ export default function TodoSection() {
     setMsg({ type: "ok", text: t("task_deleted") });
   }
 
+  async function clearDone() {
+    setConfirmClear(false);
+    const done = tasks.filter((x) => x.is_done);
+    if (!done.length) return;
+    const { error } = await supabase.from("tasks").delete().eq("is_done", true);
+    if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
+    const paths = done.map((x) => x.image_path).filter(Boolean);
+    if (paths.length) await supabase.storage.from("liveops-files").remove(paths);
+    setTasks((prev) => prev.filter((x) => !x.is_done));
+    setMsg({ type: "ok", text: t("task_done_deleted") });
+  }
+
   const shown = sortTasks(tasks).filter((x) => (filter === "all" ? true : filter === "done" ? x.is_done : !x.is_done));
+
+  function downloadPng() {
+    setMsg({ type: "", text: "" });
+    if (!shown.length) { setMsg({ type: "error", text: t("todo_nothing_to_download") }); return; }
+    try {
+      const filterLabel = filter === "active" ? t("filter_active") : filter === "done" ? t("filter_done") : t("filter_all");
+      const items = shown.map((x) => {
+        const due = taskDue(x);
+        return {
+          title: x.title,
+          notes: x.notes || "",
+          done: x.is_done,
+          urgent: x.priority === "urgent",
+          priorityLabel: x.priority === "urgent" ? t("todo_urgent") : t("todo_normal"),
+          dueText: due ? formatDue(due, lang) : "",
+          dueState: x.is_done ? null : dueStatus(due),
+        };
+      });
+      const canvas = drawTodoImage((w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }, {
+        title: t("todo_image_title"),
+        subtitle: filterLabel + " · " + formatDay(todayStr(), lang, { day: "numeric", month: "short", year: "numeric" }) + " · " + shown.length,
+        name: profile && profile.full_name ? profile.full_name : "",
+        items,
+        footer: t("shift_image_footer"),
+        emptyText: t("todo_nothing_to_download"),
+      });
+      canvas.toBlob((blob) => {
+        if (!blob) { setMsg({ type: "error", text: t("shift_image_failed") }); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "liveops-todo-" + todayStr() + ".png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, "image/png");
+    } catch (e) {
+      setMsg({ type: "error", text: t("shift_image_failed") + " (" + (e.message || e) + ")" });
+    }
+  }
+
   const emptyText = filter === "active" ? t("task_empty_active") : filter === "done" ? t("task_empty_done") : t("task_empty_all");
   const inputCls = "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40";
   const showCurrentPhoto = form.image_path && !removePhoto && !file;
@@ -123,13 +183,20 @@ export default function TodoSection() {
     <div className="space-y-4">
       <Notice type={msg.type === "ok" ? "ok" : "error"}>{msg.text}</Notice>
 
-      <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-medium text-black"><Plus size={16} />{t("task_add")}</button>
+      <div className="flex gap-2">
+        <button onClick={openAdd} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-medium text-black"><Plus size={16} />{t("task_add")}</button>
+        <button onClick={downloadPng} disabled={loading} className="flex items-center gap-1 rounded-xl border border-white/10 px-3 text-xs text-zinc-200 disabled:opacity-40"><Download size={14} />{t("todo_download")}</button>
+      </div>
 
       <div className="grid grid-cols-3 gap-2">
         {[["active", "filter_active"], ["done", "filter_done"], ["all", "filter_all"]].map(([k, label]) => (
           <button key={k} onClick={() => setFilter(k)} className={"rounded-xl border py-2 text-xs " + (filter === k ? "border-white bg-white text-black" : "border-white/10 text-zinc-300")}>{t(label)}</button>
         ))}
       </div>
+
+      {filter === "done" && shown.length > 0 && (
+        <button onClick={() => setConfirmClear(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-300/30 py-2 text-xs text-red-300"><Trash2 size={14} />{t("task_delete_done")}</button>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-zinc-400" /></div>
@@ -138,11 +205,12 @@ export default function TodoSection() {
       ) : (
         <ul className="space-y-3">
           {shown.map((task) => {
-            const status = task.is_done ? null : deadlineStatus(task.deadline);
+            const due = taskDue(task);
+            const status = task.is_done ? null : dueStatus(due);
             return (
               <li key={task.id} className="glass rounded-2xl p-3">
                 <div className="flex items-start gap-3">
-                  <button onClick={() => toggle(task)} aria-label="Centang" className={"mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border " + (task.is_done ? "border-emerald-400 bg-emerald-400/20 text-emerald-300" : "border-white/30")}>
+                  <button onClick={() => toggle(task)} aria-label={task.is_done ? t("task_restore") : "Centang"} className={"mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border " + (task.is_done ? "border-emerald-400 bg-emerald-400/20 text-emerald-300" : "border-white/30")}>
                     {task.is_done && <Check size={14} />}
                   </button>
                   <div className="min-w-0 flex-1">
@@ -150,27 +218,34 @@ export default function TodoSection() {
                     {task.notes && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">{task.notes}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className={"rounded-full px-2 py-0.5 text-[10px] " + (task.priority === "urgent" ? "bg-red-400/15 text-red-300" : "bg-white/10 text-zinc-300")}>{task.priority === "urgent" ? t("todo_urgent") : t("todo_normal")}</span>
-                      {task.deadline && (
+                      {due && (
                         <span className={"flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] " + (status === "overdue" ? "bg-red-400/15 text-red-300" : status === "today" ? "bg-amber-300/15 text-amber-200" : "bg-white/10 text-zinc-300")}>
-                          <Clock size={10} />{status === "overdue" ? t("overdue") + " · " : status === "today" ? t("due_today") + " · " : ""}{formatDeadline(task.deadline, lang)}
+                          <Clock size={10} />{status === "overdue" ? t("overdue") + " · " : status === "today" ? t("due_today") + " · " : ""}{formatDue(due, lang)}
                         </span>
                       )}
                     </div>
                     {task.image_path && (
                       <SignedImage path={task.image_path} alt="" className="mt-3 h-24 w-24 cursor-pointer rounded-xl border border-white/10 object-cover" onClick={() => setLightbox(task.image_path)} />
                     )}
+                    {task.is_done && (
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={() => toggle(task)} className="flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200"><Undo2 size={13} />{t("task_restore")}</button>
+                        <button onClick={() => setToDelete(task)} className="flex items-center gap-1 rounded-full border border-white/10 px-3 py-1.5 text-xs text-red-300"><Trash2 size={13} />{t("delete")}</button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex shrink-0 flex-col gap-1">
-                    <button onClick={() => openEdit(task)} aria-label="Edit" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-zinc-300"><Pencil size={14} /></button>
-                    <button onClick={() => setToDelete(task)} aria-label="Hapus" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-red-300"><Trash2 size={14} /></button>
-                  </div>
+                  {!task.is_done && (
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button onClick={() => openEdit(task)} aria-label="Edit" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-zinc-300"><Pencil size={14} /></button>
+                      <button onClick={() => setToDelete(task)} aria-label="Hapus" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-red-300"><Trash2 size={14} /></button>
+                    </div>
+                  )}
                 </div>
               </li>
             );
           })}
         </ul>
       )}
-
 
       <Sheet open={open} title={form.id ? t("task_edit") : t("task_add")} onClose={() => !saving && setOpen(false)}>
         <div className="space-y-4">
@@ -191,11 +266,18 @@ export default function TodoSection() {
           </label>
           <div>
             <p className="text-xs text-zinc-400">{t("task_deadline")}</p>
-            <div className="mt-1 flex gap-2">
-              <input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className={inputCls} />
-              {form.deadline && <button type="button" onClick={() => setForm({ ...form, deadline: "" })} className="shrink-0 rounded-xl border border-white/10 px-3 text-xs text-zinc-300">{t("task_deadline_clear")}</button>}
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <label className="text-[11px] text-zinc-500">{t("task_date")}
+                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputCls + " mt-1"} />
+              </label>
+              <label className="text-[11px] text-zinc-500">{t("task_time")}
+                <input type="time" value={form.time} disabled={!form.date} onChange={(e) => setForm({ ...form, time: e.target.value })} className={inputCls + " mt-1 disabled:opacity-40"} />
+              </label>
             </div>
-            <p className="mt-1 text-[11px] text-zinc-500">{t("task_deadline_hint")}</p>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <p className="text-[11px] text-zinc-500">{t("task_deadline_hint")} {t("task_time_hint")}</p>
+              {(form.date || form.time) && <button type="button" onClick={() => setForm({ ...form, date: "", time: "" })} className="shrink-0 text-[11px] text-zinc-300 underline">{t("task_deadline_clear")}</button>}
+            </div>
           </div>
           <div>
             <p className="text-xs text-zinc-400">{t("task_photo")}</p>
@@ -222,6 +304,7 @@ export default function TodoSection() {
       </Sheet>
 
       <ConfirmDialog open={Boolean(toDelete)} danger message={t("task_delete_confirm")} confirmLabel={t("delete")} onConfirm={doDelete} onCancel={() => setToDelete(null)} />
+      <ConfirmDialog open={confirmClear} danger message={t("task_delete_done_confirm")} confirmLabel={t("delete")} onConfirm={clearDone} onCancel={() => setConfirmClear(false)} />
 
       {lightbox && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-4" onClick={() => setLightbox("")}>

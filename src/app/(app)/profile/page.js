@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { tenureParts, remainingParts, formatParts, formatDays } from "@/lib/dates";
 import { APP_VERSION } from "@/lib/version";
+import { deductsBalance } from "@/lib/shifts";
 import GlassCard from "@/components/GlassCard";
 import SignedImage from "@/components/SignedImage";
 import GallerySection from "@/components/GallerySection";
@@ -17,9 +18,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.from("leave_entries").select("kind,days").then(({ data, error }) => {
+    supabase.from("leave_entries").select("kind,days,leave_type").then(({ data, error }) => {
       if (error || !data) return;
-      setBalance(data.reduce((sum, r) => sum + (r.kind === "topup" ? 1 : -1) * Number(r.days || 0), 0));
+      setBalance(data.reduce((sum, r) => sum + (r.kind === "topup" ? Number(r.days || 0) : deductsBalance(r) ? -Number(r.days || 0) : 0), 0));
     });
   }, [supabase]);
 

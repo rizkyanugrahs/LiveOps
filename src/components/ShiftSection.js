@@ -5,7 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
 import { todayStr, monthStr, monthRange, addDays, weekStart, formatDay } from "@/lib/dates";
-import { PLATFORMS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff } from "@/lib/shifts";
+import { PLATFORMS, LEAVE_COLORS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
 import { drawShiftImage } from "@/lib/shiftImage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
@@ -20,10 +20,10 @@ function Pill({ platform }) {
 // Isi satu hari: Off Day / dua sesi dengan platform / jadwal lama
 function ShiftSummary({ row, t }) {
   if (!row) return <p className="text-sm text-zinc-500">{t("shift_unset")}</p>;
-  if (isOff(row)) {
+  if (isOff(row) || isLeave(row)) {
     return (
       <div>
-        <p className="flex items-center gap-2 text-sm"><span className="h-2.5 w-2.5 rounded-full bg-zinc-500" />{t("shift_kind_off")}</p>
+        <p className="flex items-center gap-2 text-sm"><span className="h-2.5 w-2.5 rounded-full" style={{ background: isLeave(row) ? LEAVE_COLORS[row.shift_type] : "#71717a" }} />{isLeave(row) ? t("leave_type_" + row.shift_type) : t("shift_kind_off")}</p>
         {row.note && <p className="mt-0.5 truncate text-xs text-zinc-400">{row.note}</p>}
       </div>
     );
@@ -96,7 +96,11 @@ export default function ShiftSection() {
   async function doDelete() {
     const id = toDelete;
     setToDelete(null);
-    const { error } = await supabase.from("shifts").delete().eq("id", id);
+    const row = rows.find((r) => r.id === id);
+    // jadwal cuti: hapus catatan cuti-nya (saldo kembali), jadwal ikut terhapus
+    const { error } = row && row.leave_entry_id
+      ? await supabase.from("leave_entries").delete().eq("id", row.leave_entry_id)
+      : await supabase.from("shifts").delete().eq("id", id);
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     setOpen(false);
     setMsg({ type: "ok", text: t("shift_deleted") });
@@ -137,6 +141,7 @@ export default function ShiftSection() {
           off: t("shift_kind_off"),
           breakText: t("shift_break"),
           units: { h: t("shift_unit_h"), m: t("shift_unit_m") },
+          leave: (type) => t("leave_type_" + type),
           legacy: (type) => t("shift_" + type),
         },
       });

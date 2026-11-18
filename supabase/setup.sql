@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.5.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.6.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -122,6 +122,13 @@ alter table public.shifts add column if not exists session2_end text;
 alter table public.shifts add column if not exists session2_platform text;
 alter table public.shifts add column if not exists partner text;
 alter table public.shifts add column if not exists team text[] not null default '{}'::text[];
+alter table public.leave_entries add column if not exists leave_type text;
+alter table public.shifts add column if not exists leave_entry_id uuid references public.leave_entries(id) on delete cascade;
+alter table public.gmv_entries add column if not exists tiktok_amount numeric;
+alter table public.gmv_entries add column if not exists shopee_amount numeric;
+alter table public.gmv_entries add column if not exists partner text;
+alter table public.tasks add column if not exists deadline_date date;
+alter table public.tasks add column if not exists deadline_time text;
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
@@ -135,6 +142,7 @@ create index if not exists tasks_user_done_idx on public.tasks (user_id, is_done
 create index if not exists products_user_name_idx on public.products (user_id, name);
 create index if not exists products_user_category_idx on public.products (user_id, category);
 create index if not exists leave_entries_user_date_idx on public.leave_entries (user_id, entry_date);
+create index if not exists shifts_leave_entry_idx on public.shifts (leave_entry_id);
 
 -- 10. Keamanan: data hanya bisa dilihat pemiliknya (Row Level Security)
 do $$

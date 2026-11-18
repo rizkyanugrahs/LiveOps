@@ -1,4 +1,4 @@
-import { PLATFORMS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff } from "@/lib/shifts";
+import { PLATFORMS, LEAVE_COLORS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
 
 const FONT = "Helvetica, Arial, sans-serif";
 const W = 1080;
@@ -39,7 +39,7 @@ function infoLines(item, labels) {
 function rowHeight(item, labels) {
   const row = item.row;
   if (!row) return 96;
-  if (isOff(row)) return row.note ? 130 : 96;
+  if (isOff(row) || isLeave(row)) return row.note ? 130 : 96;
   const sessions = sessionList(row);
   if (!sessions.length) return row.note ? 130 : 96; // jadwal lama tanpa sesi
   return 40 + sessions.length * 66 + infoLines(item, labels).length * 40 + 24;
@@ -122,14 +122,14 @@ export function drawShiftImage(createCanvas, { title, subtitle, name, items, foo
       ctx.fillStyle = "#52525b";
       ctx.font = "400 34px " + FONT;
       ctx.fillText("-", x2, y + h / 2 + 12);
-    } else if (isOff(row)) {
-      ctx.fillStyle = "#71717a";
+    } else if (isOff(row) || isLeave(row)) {
+      ctx.fillStyle = isLeave(row) ? LEAVE_COLORS[row.shift_type] : "#71717a";
       ctx.beginPath();
       ctx.arc(x2 + 12, y + 48, 12, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#ffffff";
       ctx.font = "600 34px " + FONT;
-      ctx.fillText(labels.off, x2 + 40, y + 60);
+      ctx.fillText(isLeave(row) ? labels.leave(row.shift_type) : labels.off, x2 + 40, y + 60);
       if (row.note) {
         ctx.fillStyle = "#a3a3a3";
         ctx.font = "400 26px " + FONT;
