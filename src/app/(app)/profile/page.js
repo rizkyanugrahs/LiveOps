@@ -9,7 +9,7 @@ import { APP_VERSION } from "@/lib/version";
 import { deductsBalance } from "@/lib/shifts";
 import GlassCard from "@/components/GlassCard";
 import SignedImage from "@/components/SignedImage";
-import GallerySection from "@/components/GallerySection";
+import MemoriesCard from "@/components/MemoriesCard";
 
 export default function ProfilePage() {
   const { supabase, profile, isGuest } = useAuth();
@@ -76,7 +76,7 @@ export default function ProfilePage() {
         </div>
       </GlassCard>
 
-      <GallerySection />
+      <MemoriesCard />
 
       <Link href="/profile/settings" className="glass flex items-center justify-between rounded-2xl p-4">
         <span className="flex items-center gap-3 text-sm font-medium"><Settings size={20} className="text-zinc-300" />{t("settings")}</span>

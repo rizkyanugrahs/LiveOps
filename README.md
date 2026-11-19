@@ -1,7 +1,7 @@
-# LiveOps v1.6.0
+# LiveOps v1.7.0
 Your Workday, Under Control.
 
 Langkah pembaruan (semua lewat browser):
 1. Supabase > SQL Editor: jalankan ulang isi file supabase/setup.sql (aman diulang). Wajib untuk versi ini.
-2. GitHub: unggah isi ZIP ke repositori (timpa file lama).
+2. GitHub: unggah isi ZIP ke repositori (timpa file lama). Hapus file lama src/components/GallerySection.js jika masih ada.
 3. Vercel akan memasang otomatis. Tunggu status Ready.

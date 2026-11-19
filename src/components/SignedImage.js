@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { BUCKET } from "@/lib/storage";
 
-export default function SignedImage({ path, className = "", alt = "", onClick }) {
+export default function SignedImage({ path, className = "", alt = "", onClick, placeholderClass = "" }) {
   const { supabase } = useAuth();
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
@@ -21,8 +21,8 @@ export default function SignedImage({ path, className = "", alt = "", onClick })
     return () => { active = false; };
   }, [path, supabase]);
 
-  if (failed) return <div className={"bg-white/5 " + className} />;
-  if (!url) return <div className={"animate-pulse bg-white/5 " + className} />;
+  if (failed) return <div className={"bg-white/5 " + className + " " + placeholderClass} />;
+  if (!url) return <div className={"animate-pulse bg-white/5 " + className + " " + placeholderClass} />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt={alt} className={className} onClick={onClick} onError={() => setFailed(true)} />;
 }

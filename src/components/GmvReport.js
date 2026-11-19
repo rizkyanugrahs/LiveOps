@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Loader2, TrendingUp, TrendingDown } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Loader2, TrendingUp, TrendingDown } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -59,7 +60,10 @@ function buildSeries(rows, mode, month, from, to) {
   return { values: out, from: keys[0], to: keys[keys.length - 1], monthly: true };
 }
 
-export default function GmvReport({ refreshKey = 0 }) {
+// Hari yang baru mengisi GMV awal (belum ada hasil) tidak dihitung
+const isRecorded = (r) => (r.shopee_amount !== null && r.shopee_amount !== undefined) || (r.tiktok_amount !== null && r.tiktok_amount !== undefined) || Number(r.amount) > 0;
+
+export default function GmvReport({ refreshKey = 0, backHref }) {
   const { supabase, profile } = useAuth();
   const { t, lang } = useI18n();
   const [mode, setMode] = useState("month");
@@ -86,12 +90,12 @@ export default function GmvReport({ refreshKey = 0 }) {
     setLoading(true);
     const res = await fetchAll(supabase, range);
     if (res.error) { setMsg(friendlyError(res.error)); setRows([]); }
-    else { setMsg(""); setRows(res.data); }
+    else { setMsg(""); setRows(res.data.filter(isRecorded)); }
     if (targetMonth) {
       const tg = await supabase.from("gmv_targets").select("target").eq("month", targetMonth).maybeSingle();
       setTarget(tg.data ? Number(tg.data.target) : 0);
       const pr = await fetchAll(supabase, monthRange(shiftMonth(targetMonth, -1)));
-      if (pr.data) setPrev({ total: pr.data.reduce((s, r) => s + Number(r.amount || 0), 0), days: pr.data.length });
+      if (pr.data) { const done = pr.data.filter(isRecorded); setPrev({ total: done.reduce((s, r) => s + Number(r.amount || 0), 0), days: done.length }); }
       else setPrev(null);
     } else { setTarget(0); setPrev(null); }
     setLoading(false);
@@ -110,6 +114,12 @@ export default function GmvReport({ refreshKey = 0 }) {
   const shopeeTotal = rows.reduce((s, r) => s + Number(r.shopee_amount || 0), 0);
   const tiktokTotal = rows.reduce((s, r) => s + Number(r.tiktok_amount || 0), 0);
   const hasSplit = rows.some((r) => r.shopee_amount !== null && r.shopee_amount !== undefined || r.tiktok_amount !== null && r.tiktok_amount !== undefined);
+
+  const platformDays = (key) => rows.filter((r) => r[key] !== null && r[key] !== undefined).length;
+  const shopeeAvg = platformDays("shopee_amount") ? shopeeTotal / platformDays("shopee_amount") : null;
+  const tiktokAvg = platformDays("tiktok_amount") ? tiktokTotal / platformDays("tiktok_amount") : null;
+  const chart = useMemo(() => buildSeries(rows, mode, month, from, to), [rows, mode, month, from, to]);
+  const chartMax = chart.values.reduce((m, v) => Math.max(m, v), 0);
 
   const partnerCounts = {};
   rows.forEach((r) => { if (r.partner) partnerCounts[r.partner] = (partnerCounts[r.partner] || 0) + 1; });
@@ -205,7 +215,10 @@ export default function GmvReport({ refreshKey = 0 }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">{t("gmvr_title")}</h2>
+        <div className="flex items-center gap-3">
+          {backHref && <Link href={backHref} aria-label={t("back")} className="glass flex h-9 w-9 items-center justify-center rounded-full"><ArrowLeft size={18} /></Link>}
+          <h2 className={backHref ? "text-2xl font-semibold tracking-tight" : "text-lg font-semibold tracking-tight"}>{backHref ? t("gmvr_page_title") : t("gmvr_title")}</h2>
+        </div>
         <div className="flex gap-2">{exportBtn("png", t("gmvr_png"))}{exportBtn("pdf", t("gmvr_pdf"))}</div>
       </div>
 
@@ -268,10 +281,11 @@ export default function GmvReport({ refreshKey = 0 }) {
             <>
               {hasSplit && (
                 <div className="mt-4 grid grid-cols-2 gap-2">
-                  {[["shopee", shopeeTotal], ["tiktok", tiktokTotal]].map(([k, v]) => (
+                  {[["shopee", shopeeTotal, shopeeAvg], ["tiktok", tiktokTotal, tiktokAvg]].map(([k, v, a]) => (
                     <div key={k} className="rounded-xl border border-white/10 bg-black/20 p-3">
                       <span className={"rounded-full px-2 py-0.5 text-[10px] font-medium " + PLATFORMS[k].cls}>{PLATFORMS[k].label}</span>
                       <p className="mt-2 text-sm font-semibold">{formatRupiah(v)}</p>
+                      <p className="mt-0.5 text-[11px] text-zinc-400">{k === "shopee" ? t("gmvt_avg_shopee") : t("gmvt_avg_tiktok")}: {a === null ? "-" : formatRupiah(a)}</p>
                     </div>
                   ))}
                 </div>
@@ -282,6 +296,17 @@ export default function GmvReport({ refreshKey = 0 }) {
                 {best && stat(t("gmvr_best"), formatRupiah(best.amount) + " · " + formatDay(best.entry_date, lang, { day: "numeric", month: "short" }))}
                 {stat(t("gmvr_partner"), partnerText || t("gmvr_no_partner"))}
               </div>
+              {chart.values.length > 1 && chartMax > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-[11px] uppercase tracking-wide text-zinc-500">{chart.monthly ? t("gmvr_chart_monthly") : t("gmvr_chart_daily")}</p>
+                  <div className="flex h-16 items-end gap-[2px]">
+                    {chart.values.map((v, i) => (
+                      <div key={i} className="flex-1 rounded-t bg-white/70" style={{ height: v > 0 ? Math.max(6, (v / chartMax) * 100) + "%" : "2px", opacity: v > 0 ? 1 : 0.25 }} />
+                    ))}
+                  </div>
+                  <p className="mt-1 flex justify-between text-[10px] text-zinc-500"><span>{chart.from}</span><span>{chart.to}</span></p>
+                </div>
+              )}
             </>
           )}
         </GlassCard>

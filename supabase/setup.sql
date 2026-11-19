@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.6.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.7.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -101,6 +101,26 @@ create table if not exists public.partners (
   created_at timestamptz not null default now()
 );
 
+-- 6d. Memories: satu momen bisa berisi banyak foto
+create table if not exists public.memories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title text,
+  memory_date date,
+  location text,
+  legacy_photo_id uuid,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.memory_photos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  memory_id uuid not null references public.memories(id) on delete cascade,
+  image_path text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 -- 7. Kolom tambahan (aman jika sudah ada) ----------------------------
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists employee_id text;
@@ -129,6 +149,11 @@ alter table public.gmv_entries add column if not exists shopee_amount numeric;
 alter table public.gmv_entries add column if not exists partner text;
 alter table public.tasks add column if not exists deadline_date date;
 alter table public.tasks add column if not exists deadline_time text;
+alter table public.gmv_entries add column if not exists shopee_start numeric;
+alter table public.gmv_entries add column if not exists shopee_end numeric;
+alter table public.gmv_entries add column if not exists tiktok_start numeric;
+alter table public.gmv_entries add column if not exists tiktok_end numeric;
+alter table public.memories add column if not exists legacy_photo_id uuid;
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
@@ -143,13 +168,16 @@ create index if not exists products_user_name_idx on public.products (user_id, n
 create index if not exists products_user_category_idx on public.products (user_id, category);
 create index if not exists leave_entries_user_date_idx on public.leave_entries (user_id, entry_date);
 create index if not exists shifts_leave_entry_idx on public.shifts (leave_entry_id);
+create unique index if not exists memories_legacy_photo_uidx on public.memories (legacy_photo_id);
+create index if not exists memories_user_date_idx on public.memories (user_id, memory_date);
+create index if not exists memory_photos_memory_idx on public.memory_photos (memory_id, sort_order);
 
 -- 10. Keamanan: data hanya bisa dilihat pemiliknya (Row Level Security)
 do $$
 declare
   t text;
 begin
-  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries','partners']
+  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries','partners','memories','memory_photos']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', 'own_' || t, t);
@@ -160,6 +188,19 @@ begin
   end loop;
 end
 $$;
+
+-- 10b. Foto galeri lama dipindahkan menjadi momen (hanya sekali per foto)
+insert into public.memories (user_id, title, memory_date, legacy_photo_id)
+select g.user_id, g.caption, g.taken_at, g.id
+from public.gallery_photos g
+where g.image_path is not null
+  and not exists (select 1 from public.memories m where m.legacy_photo_id = g.id);
+
+insert into public.memory_photos (user_id, memory_id, image_path)
+select m.user_id, m.id, g.image_path
+from public.memories m
+join public.gallery_photos g on g.id = m.legacy_photo_id
+where not exists (select 1 from public.memory_photos p where p.memory_id = m.id);
 
 -- 11. Penyimpanan foto (privat, tiap pengguna hanya akses foldernya sendiri)
 insert into storage.buckets (id, name, public)

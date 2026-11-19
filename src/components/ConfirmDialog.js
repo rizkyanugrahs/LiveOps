@@ -5,7 +5,7 @@ export default function ConfirmDialog({ open, message, confirmLabel, danger = fa
   const { t } = useI18n();
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-6">
       <div className="glass w-full max-w-sm rounded-2xl p-5">
         <p className="text-sm text-white">{message}</p>
         <div className="mt-5 flex gap-3">
