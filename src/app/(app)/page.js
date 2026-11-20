@@ -66,8 +66,8 @@ export default function HomePage() {
           <Link href="/profile/settings" className="mt-1 text-xs text-zinc-400 underline underline-offset-4">{t("payday_set")}</Link>
         ) : (
           <div className="text-right">
-            <p className="text-3xl font-bold leading-none tracking-tight text-white">{toPayday === 0 ? t("payday_today") : t("payday_chip").replace("{n}", toPayday)}</p>
-            <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-400">{t("payday_label")}</p>
+            <p className="text-lg font-bold leading-none tracking-tight text-white">{toPayday === 0 ? t("payday_today") : t("payday_chip").replace("{n}", toPayday)}</p>
+            <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.2em] text-zinc-400">{t("payday_label")}</p>
           </div>
         )}
       </header>

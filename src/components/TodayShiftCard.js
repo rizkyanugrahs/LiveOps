@@ -5,17 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { PLATFORMS, LEAVE_COLORS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
 import GlassCard from "@/components/GlassCard";
 
-function InfoRow({ icon: Icon, label, value }) {
-  return (
-    <div className="flex items-start gap-3 py-2.5">
-      <Icon size={15} className="mt-0.5 shrink-0 text-zinc-500" />
-      <span className="w-14 shrink-0 text-xs text-zinc-500">{label}</span>
-      <span className="min-w-0 flex-1 text-sm font-medium leading-snug">{value}</span>
-    </div>
-  );
-}
-
-// Ringkasan shift hari ini: dua kotak sesi, lalu info tambahan yang tersusun rapi
+// Ringkasan shift hari ini: dua kotak sesi, lalu satu baris info (break · partner · tim)
 export default function TodayShiftCard({ row }) {
   const { t } = useI18n();
   const units = { h: t("shift_unit_h"), m: t("shift_unit_m") };
@@ -38,7 +28,10 @@ export default function TodayShiftCard({ row }) {
     } else {
       const brk = breakMinutes(row);
       const team = teamList(row);
-      const hasInfo = brk || row.partner || team.length > 0;
+      const segments = [];
+      if (brk) segments.push({ key: "brk", icon: Coffee, label: t("shift_break"), text: fmtDuration(brk, units), fixed: true });
+      if (row.partner) segments.push({ key: "partner", icon: User, label: t("shift_partner"), text: row.partner });
+      if (team.length > 0) segments.push({ key: "team", icon: Users, label: t("shift_tab_team"), text: team.join(", ") });
       body = (
         <div className="mt-3">
           <div className="grid grid-cols-2 gap-2">
@@ -55,11 +48,17 @@ export default function TodayShiftCard({ row }) {
               );
             })}
           </div>
-          {hasInfo && (
-            <div className="mt-4 divide-y divide-white/5 border-t border-white/10">
-              {brk ? <InfoRow icon={Coffee} label={t("shift_break")} value={fmtDuration(brk, units)} /> : null}
-              {row.partner ? <InfoRow icon={User} label={t("shift_partner")} value={row.partner} /> : null}
-              {team.length > 0 ? <InfoRow icon={Users} label={t("shift_tab_team")} value={team.join(", ")} /> : null}
+          {segments.length > 0 && (
+            <div className="mt-3 flex items-center border-t border-white/10 pt-3 text-xs text-zinc-300">
+              {segments.map((seg, i) => {
+                const Icon = seg.icon;
+                return (
+                  <div key={seg.key} className={"flex items-center gap-1.5 " + (seg.fixed ? "shrink-0" : "min-w-0") + (i > 0 ? " ml-3 border-l border-white/10 pl-3" : "")} title={seg.label}>
+                    <Icon size={13} className="shrink-0 text-zinc-500" />
+                    <span className={seg.fixed ? "" : "truncate"}>{seg.text}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

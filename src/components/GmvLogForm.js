@@ -1,28 +1,27 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowUpDown } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
 import { todayStr, formatRupiah } from "@/lib/dates";
-import { PLATFORMS } from "@/lib/shifts";
+import { PLATFORMS, otherPlatform } from "@/lib/shifts";
 import Notice from "@/components/Notice";
 
 const num = (v) => Number(String(v || "").replace(/[^0-9]/g, "")) || 0;
-const blankText = (v) => String(v === null || v === undefined ? "" : v).trim() === "";
+const blank = (v) => String(v === null || v === undefined ? "" : v).trim() === "";
 const asText = (v) => (v === null || v === undefined ? "" : String(Number(v)));
-const emptyDiff = () => ({ shopee: { start: "", end: "" }, tiktok: { start: "", end: "" } });
+const slot = (platform) => ({ platform, amount: "", start: "", end: "" });
+const has = (v) => v !== null && v !== undefined;
 
-// Input GMV harian: 2 platform sekaligus, dengan 2 cara:
-// Manual (angka langsung) atau Selisih (GMV sebelum live dan setelah live). Partner diambil dari jadwal.
+// Input GMV harian dalam 2 baris (slot). Badge platform bisa diklik untuk ganti platform,
+// dan urutan bisa ditukar. Dua cara: Manual (angka langsung) atau Selisih (sebelum dan sesudah live).
 export default function GmvLogForm({ onSaved }) {
   const { supabase, user } = useAuth();
   const { t } = useI18n();
   const [date, setDate] = useState(todayStr());
   const [method, setMethod] = useState("manual");
-  const [manual, setManual] = useState({ shopee: "", tiktok: "" });
-  const [diff, setDiff] = useState(emptyDiff());
-  const [order, setOrder] = useState(["shopee", "tiktok"]);
+  const [slots, setSlots] = useState([slot("shopee"), slot("tiktok")]);
   const [partner, setPartner] = useState("");
   const [detected, setDetected] = useState(false);
   const [legacy, setLegacy] = useState(0);
@@ -30,7 +29,6 @@ export default function GmvLogForm({ onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // setiap tanggal berubah: cek jadwal (partner, urutan platform) dan catatan GMV yang sudah ada
   useEffect(() => {
     if (!supabase || !date) return;
     let active = true;
@@ -46,72 +44,87 @@ export default function GmvLogForm({ onSaved }) {
       setDetected(Boolean(shiftPartner));
       setPartner(shiftPartner || (e && e.partner) || "");
       const first = shift && shift.session1_platform === "tiktok" ? "tiktok" : "shopee";
-      setOrder([first, first === "shopee" ? "tiktok" : "shopee"]);
-      const hasDiff = e && ["shopee_start", "shopee_end", "tiktok_start", "tiktok_end"].some((k) => e[k] !== null && e[k] !== undefined);
-      const hasSplit = e && (e.shopee_amount !== null && e.shopee_amount !== undefined || e.tiktok_amount !== null && e.tiktok_amount !== undefined);
-      setMethod(hasDiff ? "diff" : "manual");
-      setManual({ shopee: e ? asText(e.shopee_amount) : "", tiktok: e ? asText(e.tiktok_amount) : "" });
-      setDiff({
-        shopee: { start: e ? asText(e.shopee_start) : "", end: e ? asText(e.shopee_end) : "" },
-        tiktok: { start: e ? asText(e.tiktok_start) : "", end: e ? asText(e.tiktok_end) : "" },
-      });
-      setLegacy(e && !hasSplit && !hasDiff ? Number(e.amount || 0) : 0);
+      let next = [slot(first), slot(otherPlatform(first))];
+      let isDiff = false;
+      let legacyTotal = 0;
+      if (e && Array.isArray(e.slots) && e.slots.length) {
+        next = e.slots.slice(0, 2).map((s) => ({ platform: s.platform === "tiktok" ? "tiktok" : "shopee", amount: asText(s.amount), start: asText(s.start), end: asText(s.end) }));
+        while (next.length < 2) next.push(slot(otherPlatform(next[0].platform)));
+        isDiff = next.some((s) => s.start !== "" || s.end !== "");
+      } else if (e) {
+        // catatan versi lama: satu angka per platform
+        const byPlatform = {
+          shopee: { amount: asText(e.shopee_amount), start: asText(e.shopee_start), end: asText(e.shopee_end) },
+          tiktok: { amount: asText(e.tiktok_amount), start: asText(e.tiktok_start), end: asText(e.tiktok_end) },
+        };
+        next = next.map((s) => ({ ...s, ...byPlatform[s.platform] }));
+        isDiff = ["shopee_start", "shopee_end", "tiktok_start", "tiktok_end"].some((k) => has(e[k]));
+        if (!has(e.shopee_amount) && !has(e.tiktok_amount) && !isDiff) legacyTotal = Number(e.amount || 0);
+      }
+      setSlots(next);
+      setMethod(isDiff ? "diff" : "manual");
+      setLegacy(legacyTotal);
       setError("");
       setChecking(false);
     });
     return () => { active = false; };
   }, [supabase, date]);
 
-  // hasil selisih per platform: null jika belum lengkap
-  const diffResult = (k) => {
-    const d = diff[k];
-    if (blankText(d.start) || blankText(d.end)) return null;
-    return num(d.end) - num(d.start);
+  const patch = (i, p) => setSlots(slots.map((s, idx) => (idx === i ? { ...s, ...p } : s)));
+  const togglePlatform = (i) => patch(i, { platform: otherPlatform(slots[i].platform) });
+  const swap = () => setSlots([slots[1], slots[0]]);
+
+  // nilai tiap slot: { result: angka | null, pending: bool }
+  const valueOf = (s) => {
+    if (method === "manual") return { result: blank(s.amount) ? null : num(s.amount), pending: false };
+    const hasStart = !blank(s.start);
+    const hasEnd = !blank(s.end);
+    if (hasStart && hasEnd) return { result: num(s.end) - num(s.start), pending: false };
+    return { result: null, pending: hasStart && !hasEnd };
   };
-  const total = method === "manual"
-    ? num(manual.shopee) + num(manual.tiktok)
-    : ["shopee", "tiktok"].reduce((s, k) => s + Math.max(0, diffResult(k) || 0), 0);
+  const values = slots.map(valueOf);
+  const platformSum = (p) => slots.reduce((sum, s, i) => (s.platform === p && values[i].result !== null && values[i].result >= 0 ? sum + values[i].result : sum), 0);
+  const platformUsed = (p) => slots.some((s, i) => s.platform === p && values[i].result !== null && values[i].result >= 0);
+  const total = platformSum("shopee") + platformSum("tiktok");
 
   async function save() {
-    let payload;
     let doneKey = "gmv_saved";
-    if (method === "manual") {
-      const shopee = num(manual.shopee);
-      const tiktok = num(manual.tiktok);
-      if (!shopee && !tiktok) { setError(t("gmv_need_one")); return; }
-      payload = {
-        shopee_amount: blankText(manual.shopee) ? null : shopee,
-        tiktok_amount: blankText(manual.tiktok) ? null : tiktok,
-        amount: shopee + tiktok,
-        shopee_start: null, shopee_end: null, tiktok_start: null, tiktok_end: null,
-      };
-    } else {
-      payload = { shopee_start: null, shopee_end: null, shopee_amount: null, tiktok_start: null, tiktok_end: null, tiktok_amount: null, amount: 0 };
-      let any = false;
-      let sum = 0;
-      let pending = false;
-      for (const k of ["shopee", "tiktok"]) {
-        const d = diff[k];
-        const hasStart = !blankText(d.start);
-        const hasEnd = !blankText(d.end);
-        if (!hasStart && !hasEnd) continue;
-        any = true;
+    let any = false;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (method === "manual") {
+        if (!blank(s.amount) && num(s.amount) > 0) any = true;
+      } else {
+        const hasStart = !blank(s.start);
+        const hasEnd = !blank(s.end);
+        if (hasStart || hasEnd) any = true;
         if (hasEnd && !hasStart) { setError(t("gmv_need_start")); return; }
-        payload[k + "_start"] = num(d.start);
-        if (hasEnd) {
-          const result = num(d.end) - num(d.start);
-          if (result < 0) { setError(t("gmv_diff_negative")); return; }
-          payload[k + "_end"] = num(d.end);
-          payload[k + "_amount"] = result;
-          sum += result;
-        } else pending = true;
+        if (hasStart && hasEnd && num(s.end) < num(s.start)) { setError(t("gmv_diff_negative")); return; }
+        if (hasStart && !hasEnd) doneKey = "gmv_start_saved";
       }
-      if (!any) { setError(t("gmv_need_one")); return; }
-      payload.amount = sum;
-      if (pending) doneKey = "gmv_start_saved";
     }
+    if (!any) { setError(t("gmv_need_one")); return; }
+
+    const stored = slots.map((s, i) => ({
+      platform: s.platform,
+      amount: values[i].result,
+      start: method === "diff" && !blank(s.start) ? num(s.start) : null,
+      end: method === "diff" && !blank(s.end) ? num(s.end) : null,
+    }));
+    const shopee = platformUsed("shopee") ? platformSum("shopee") : null;
+    const tiktok = platformUsed("tiktok") ? platformSum("tiktok") : null;
+
     setSaving(true); setError("");
-    const { error: e } = await supabase.from("gmv_entries").upsert({ ...payload, user_id: user.id, entry_date: date, partner: partner.trim() || null }, { onConflict: "user_id,entry_date" });
+    const { error: e } = await supabase.from("gmv_entries").upsert({
+      user_id: user.id,
+      entry_date: date,
+      shopee_amount: shopee,
+      tiktok_amount: tiktok,
+      amount: (shopee || 0) + (tiktok || 0),
+      slots: stored,
+      shopee_start: null, shopee_end: null, tiktok_start: null, tiktok_end: null,
+      partner: partner.trim() || null,
+    }, { onConflict: "user_id,entry_date" });
     setSaving(false);
     if (e) { setError(friendlyError(e)); return; }
     onSaved(doneKey);
@@ -119,6 +132,12 @@ export default function GmvLogForm({ onSaved }) {
 
   const inputCls = "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40";
   const seg = (active) => "rounded-xl border py-2 text-xs " + (active ? "border-white bg-white font-medium text-black" : "border-white/10 text-zinc-300");
+  const badge = (i) => {
+    const p = PLATFORMS[slots[i].platform];
+    return (
+      <button type="button" onClick={() => togglePlatform(i)} aria-label={p.label} className={"w-20 shrink-0 rounded-full py-1.5 text-center text-xs font-medium active:scale-95 " + p.cls}>{p.label}</button>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -131,47 +150,50 @@ export default function GmvLogForm({ onSaved }) {
         <button type="button" onClick={() => { setMethod("manual"); setError(""); }} className={seg(method === "manual")}>{t("gmv_method_manual")}</button>
         <button type="button" onClick={() => { setMethod("diff"); setError(""); }} className={seg(method === "diff")}>{t("gmv_method_diff")}</button>
       </div>
-      {method === "diff" && <p className="text-[11px] text-zinc-500">{t("gmv_diff_hint")}</p>}
+      <p className="text-[11px] text-zinc-500">{method === "diff" ? t("gmv_diff_hint") + " " : ""}{t("gmvs_platform_hint")}</p>
 
-      <div className="space-y-2.5">
-        {order.map((k) => {
-          const p = PLATFORMS[k];
-          if (method === "manual") {
-            return (
-              <div key={k} className="flex items-center gap-2">
-                <span className={"w-20 shrink-0 rounded-full py-1.5 text-center text-xs font-medium " + p.cls}>{p.label}</span>
-                <input inputMode="numeric" value={manual[k]} onChange={(e) => setManual({ ...manual, [k]: e.target.value })} placeholder="Rp 0" className={inputCls} />
-              </div>
-            );
-          }
-          const r = diffResult(k);
-          const pendingStart = !blankText(diff[k].start) && blankText(diff[k].end);
-          return (
-            <div key={k} className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+      <div className="relative space-y-2.5">
+        {slots.map((s, i) => {
+          const v = values[i];
+          return method === "manual" ? (
+            <div key={i} className="flex items-center gap-2">
+              {badge(i)}
+              <input inputMode="numeric" value={s.amount} onChange={(e) => patch(i, { amount: e.target.value })} placeholder="Rp 0" className={inputCls} />
+            </div>
+          ) : (
+            <div key={i} className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex items-center justify-between">
-                <span className={"rounded-full px-3 py-1 text-xs font-medium " + p.cls}>{p.label}</span>
-                {r !== null ? (
-                  <span className={"text-sm font-semibold " + (r < 0 ? "text-rose-300" : "text-emerald-300")}>{t("gmv_result")}: {formatRupiah(r)}</span>
-                ) : pendingStart ? (
-                  <span className="text-[11px] text-amber-200">{t("gmv_pending")}</span>
-                ) : null}
+                {badge(i)}
+                {v.result !== null ? (
+                  <span className={"text-sm font-semibold " + (v.result < 0 ? "text-rose-300" : "text-emerald-300")}>{t("gmv_result")}: {formatRupiah(v.result)}</span>
+                ) : v.pending ? <span className="text-[11px] text-amber-200">{t("gmv_pending")}</span> : null}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-[11px] text-zinc-500">{t("gmv_start")}
-                  <input inputMode="numeric" value={diff[k].start} onChange={(e) => setDiff({ ...diff, [k]: { ...diff[k], start: e.target.value } })} placeholder="Rp 0" className={inputCls + " mt-1"} />
+                  <input inputMode="numeric" value={s.start} onChange={(e) => patch(i, { start: e.target.value })} placeholder="Rp 0" className={inputCls + " mt-1"} />
                 </label>
                 <label className="text-[11px] text-zinc-500">{t("gmv_end")}
-                  <input inputMode="numeric" value={diff[k].end} onChange={(e) => setDiff({ ...diff, [k]: { ...diff[k], end: e.target.value } })} placeholder="Rp 0" className={inputCls + " mt-1"} />
+                  <input inputMode="numeric" value={s.end} onChange={(e) => patch(i, { end: e.target.value })} placeholder="Rp 0" className={inputCls + " mt-1"} />
                 </label>
               </div>
             </div>
           );
         })}
+        <button type="button" onClick={swap} className="mx-auto flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-zinc-300"><ArrowUpDown size={12} />{t("gmvs_swap")}</button>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-        <span className="text-xs text-zinc-400">{t("gmv_total_calc")}</span>
-        <span className="text-sm font-semibold">{formatRupiah(total)}</span>
+      <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-zinc-400">{t("gmv_total_calc")}</span>
+          <span className="text-sm font-semibold">{formatRupiah(total)}</span>
+        </div>
+        {(platformUsed("shopee") || platformUsed("tiktok")) && (
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/5 pt-2 text-[11px] text-zinc-400">
+            {["shopee", "tiktok"].filter(platformUsed).map((p) => (
+              <span key={p} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full ring-1 ring-white/40" style={{ background: PLATFORMS[p].hex }} />{PLATFORMS[p].label} {formatRupiah(platformSum(p))}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       <label className="block text-xs text-zinc-400">{t("gmv_partner")}

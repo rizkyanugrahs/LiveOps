@@ -14,7 +14,7 @@ import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos", "leave_entries", "partners", "memories"];
+const DATA_TABLES = ["tasks", "shifts", "products", "gmv_entries", "gmv_targets", "gallery_photos", "leave_entries", "partners", "memories", "notes"];
 
 export default function SettingsPage() {
   const { supabase, user, profile, isGuest, refreshProfile } = useAuth();
@@ -120,7 +120,7 @@ export default function SettingsPage() {
   async function deleteAll() {
     setConfirm("");
     setMsg({ type: "", text: "" });
-    for (const folder of ["tasks", "products", "gallery", "memories", "avatar"]) {
+    for (const folder of ["tasks", "products", "gallery", "memories", "notes", "avatar"]) {
       const { data: files } = await supabase.storage.from(BUCKET).list(user.id + "/" + folder, { limit: 1000 });
       if (files && files.length) await supabase.storage.from(BUCKET).remove(files.map((f) => user.id + "/" + folder + "/" + f.name));
     }

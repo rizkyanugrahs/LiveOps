@@ -17,7 +17,7 @@ export default function ProductDetail({ product, onClose, onEdit, onDelete }) {
     <Sheet open title={product.name} onClose={onClose}>
       <div className="space-y-4">
         {product.category && <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs text-zinc-300">{product.category}</span>}
-        {product.image_path && <SignedImage path={product.image_path} className="h-48 w-full rounded-2xl border border-white/10 object-cover" />}
+        {product.image_path && <SignedImage path={product.image_path} className="h-56 w-full rounded-2xl border border-white/10 bg-white object-contain" />}
         {rows.map(([k, v]) => (
           <div key={k}>
             <p className="text-xs uppercase tracking-wide text-zinc-400">{t(k)}</p>

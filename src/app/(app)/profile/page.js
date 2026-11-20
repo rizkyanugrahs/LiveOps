@@ -10,6 +10,7 @@ import { deductsBalance } from "@/lib/shifts";
 import GlassCard from "@/components/GlassCard";
 import SignedImage from "@/components/SignedImage";
 import MemoriesCard from "@/components/MemoriesCard";
+import NotesCard from "@/components/NotesCard";
 
 export default function ProfilePage() {
   const { supabase, profile, isGuest } = useAuth();
@@ -75,6 +76,8 @@ export default function ProfilePage() {
           <p className={"text-right text-sm font-semibold " + (!contract ? "font-normal text-zinc-500" : contract.expired ? "text-red-300" : "")}>{contractText}</p>
         </div>
       </GlassCard>
+
+      <NotesCard />
 
       <MemoriesCard />
 

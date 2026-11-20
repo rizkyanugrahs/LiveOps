@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.7.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.8.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -121,6 +121,17 @@ create table if not exists public.memory_photos (
   created_at timestamptz not null default now()
 );
 
+-- 6e. Notes: catatan penting (target KPI, aturan baru, dan lainnya)
+create table if not exists public.notes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title text,
+  content text,
+  note_date date,
+  image_path text,
+  created_at timestamptz not null default now()
+);
+
 -- 7. Kolom tambahan (aman jika sudah ada) ----------------------------
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists employee_id text;
@@ -154,6 +165,8 @@ alter table public.gmv_entries add column if not exists shopee_end numeric;
 alter table public.gmv_entries add column if not exists tiktok_start numeric;
 alter table public.gmv_entries add column if not exists tiktok_end numeric;
 alter table public.memories add column if not exists legacy_photo_id uuid;
+alter table public.gmv_entries add column if not exists slots jsonb;
+alter table public.notes add column if not exists image_path text;
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------
@@ -171,13 +184,14 @@ create index if not exists shifts_leave_entry_idx on public.shifts (leave_entry_
 create unique index if not exists memories_legacy_photo_uidx on public.memories (legacy_photo_id);
 create index if not exists memories_user_date_idx on public.memories (user_id, memory_date);
 create index if not exists memory_photos_memory_idx on public.memory_photos (memory_id, sort_order);
+create index if not exists notes_user_date_idx on public.notes (user_id, note_date);
 
 -- 10. Keamanan: data hanya bisa dilihat pemiliknya (Row Level Security)
 do $$
 declare
   t text;
 begin
-  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries','partners','memories','memory_photos']
+  foreach t in array array['profiles','tasks','shifts','products','gmv_entries','gmv_targets','gallery_photos','leave_entries','partners','memories','memory_photos','notes']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', 'own_' || t, t);

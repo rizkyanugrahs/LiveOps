@@ -1,16 +1,45 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Loader2, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Download, Pencil, Trash2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
-import { todayStr, monthStr, monthRange, addDays, weekStart, formatDay } from "@/lib/dates";
-import { PLATFORMS, LEAVE_COLORS, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
+import { todayStr, monthStr, monthRange, addDays, weekStart, formatDay, pad } from "@/lib/dates";
+import { PLATFORMS, LEAVE_COLORS, LEAVE_CLASSES, fmtTime, breakMinutes, fmtDuration, sessionList, teamList, isOff, isLeave } from "@/lib/shifts";
 import { drawShiftImage } from "@/lib/shiftImage";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ShiftForm from "@/components/ShiftForm";
+import Sheet from "@/components/Sheet";
+
+
+const LEAVE_ABBR = { annual: "AL", sick: "SL", unpaid: "UL" };
+
+function shiftMonthStr(m, delta) {
+  const [y, mo] = m.split("-").map(Number);
+  const d = new Date(y, mo - 1 + delta, 1);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+}
+
+// Penanda kecil di dalam satu kotak tanggal kalender
+function CalendarMark({ row, t }) {
+  if (!row) return null;
+  if (isLeave(row)) {
+    return <span className={"rounded px-1 text-[9px] font-semibold leading-4 " + LEAVE_CLASSES[row.shift_type]}>{LEAVE_ABBR[row.shift_type]}</span>;
+  }
+  if (isOff(row)) return <span className="rounded bg-white/10 px-1 text-[9px] font-semibold leading-4 text-zinc-300">{t("shift_cal_off")}</span>;
+  const sessions = sessionList(row);
+  if (!sessions.length) return <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />;
+  return (
+    <span className="flex w-full flex-col gap-[3px]">
+      {sessions.map((s, i) => {
+        const p = PLATFORMS[s.platform] || PLATFORMS.shopee;
+        return <span key={i} className={"block h-[7px] w-full rounded-full " + (s.platform === "tiktok" ? "bg-black ring-1 ring-white/60" : "")} style={s.platform === "tiktok" ? undefined : { background: p.hex }} />;
+      })}
+    </span>
+  );
+}
 
 function Pill({ platform }) {
   const p = PLATFORMS[platform] || PLATFORMS.shopee;
@@ -71,6 +100,7 @@ export default function ShiftSection() {
   const [editing, setEditing] = useState(null);
   const [newDate, setNewDate] = useState(todayStr());
   const [toDelete, setToDelete] = useState(null);
+  const [dayRow, setDayRow] = useState(null); // detail satu tanggal di kalender
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -93,6 +123,13 @@ export default function ShiftSection() {
   }
   function openRow(row) { setEditing(row); setNewDate(row.shift_date); setOpen(true); }
 
+  // Klik tanggal di kalender: ada jadwal -> lihat detail; kosong -> langsung isi jadwal
+  function onCalendarDay(date) {
+    const row = rows.find((r) => r.shift_date === date);
+    if (row) setDayRow(row);
+    else { setEditing(null); setNewDate(date); setOpen(true); }
+  }
+
   async function doDelete() {
     const id = toDelete;
     setToDelete(null);
@@ -103,6 +140,7 @@ export default function ShiftSection() {
       : await supabase.from("shifts").delete().eq("id", id);
     if (error) { setMsg({ type: "error", text: friendlyError(error) }); return; }
     setOpen(false);
+    setDayRow(null);
     setMsg({ type: "ok", text: t("shift_deleted") });
     load();
   }
@@ -164,6 +202,7 @@ export default function ShiftSection() {
   const today = todayStr();
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const byDate = Object.fromEntries(rows.map((r) => [r.shift_date, r]));
+  const byDateMonth = byDate;
   const inputCls = "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40";
 
   return (
@@ -205,30 +244,62 @@ export default function ShiftSection() {
         </>
       ) : (
         <>
-          <div className="flex items-center gap-2">
-            <label className="flex-1 text-xs text-zinc-400">{t("shift_month")}
-              <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className={inputCls + " mt-1"} />
-            </label>
-            <button onClick={() => { setEditing(null); setNewDate(todayStr()); setOpen(true); }} className="mt-5 flex h-[42px] items-center gap-1 rounded-xl bg-white px-4 text-sm font-medium text-black"><Plus size={16} />{t("shift_add")}</button>
+          <div className="flex items-center justify-between">
+            <button onClick={() => setMonth(shiftMonthStr(month, -1))} aria-label={t("shift_prev")} className="glass flex h-9 w-9 items-center justify-center rounded-full"><ChevronLeft size={18} /></button>
+            <button onClick={() => setMonth(monthStr())} className="text-sm font-medium capitalize">{formatDay(month + "-01", lang, { month: "long", year: "numeric" })}</button>
+            <button onClick={() => setMonth(shiftMonthStr(month, 1))} aria-label={t("shift_next")} className="glass flex h-9 w-9 items-center justify-center rounded-full"><ChevronRight size={18} /></button>
           </div>
-          {loading ? (
-            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-zinc-400" /></div>
-          ) : rows.length === 0 ? (
-            <GlassCard className="py-10 text-center text-sm text-zinc-400">{t("shift_empty")}</GlassCard>
-          ) : (
-            <ul className="space-y-2">
-              {rows.map((r) => (
-                <li key={r.id}>
-                  <button onClick={() => openRow(r)} className="glass flex w-full items-start gap-3 rounded-2xl p-3 text-left">
-                    <div className="w-24 shrink-0 text-sm">{formatDay(r.shift_date, lang)}</div>
-                    <div className="min-w-0 flex-1"><ShiftSummary row={r} t={t} /></div>
-                  </button>
-                </li>
+
+          <div className="glass rounded-2xl p-2">
+            <div className="grid grid-cols-7 pb-1">
+              {Array.from({ length: 7 }, (_, i) => addDays(weekStart(todayStr()), i)).map((d) => (
+                <p key={d} className="text-center text-[10px] uppercase tracking-wide text-zinc-500">{formatDay(d, lang, { weekday: "short" })}</p>
               ))}
-            </ul>
-          )}
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-16"><Loader2 className="animate-spin text-zinc-400" /></div>
+            ) : (
+              <div className="grid grid-cols-7 gap-1">
+                {(() => {
+                  const { start: mStart, end: mEnd } = monthRange(month);
+                  const lead = (new Date(mStart + "T00:00:00").getDay() + 6) % 7;
+                  const cells = [];
+                  for (let i = 0; i < lead; i++) cells.push(<div key={"b" + i} />);
+                  for (let d = mStart; d < mEnd; d = addDays(d, 1)) {
+                    const row = byDateMonth[d];
+                    cells.push(
+                      <button key={d} onClick={() => onCalendarDay(d)} className={"flex min-h-[3.6rem] flex-col items-stretch gap-1 rounded-xl border p-1 text-left transition active:scale-95 " + (d === today ? "border-white/60 bg-white/10" : "border-white/5 bg-black/20")}>
+                        <span className={"text-[11px] " + (d === today ? "font-bold text-white" : "text-zinc-400")}>{Number(d.slice(8))}</span>
+                        <span className="flex flex-1 items-end"><CalendarMark row={row} t={t} /></span>
+                      </button>
+                    );
+                  }
+                  return cells;
+                })()}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[11px] text-zinc-400">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full" style={{ background: PLATFORMS.shopee.hex }} />Shopee</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-black ring-1 ring-white/60" />TikTok</span>
+            <span className="flex items-center gap-1.5"><span className="rounded bg-white/10 px-1 text-[9px] font-semibold text-zinc-300">OFF</span>Off Day</span>
+            <span className="flex items-center gap-1.5"><span className={"rounded px-1 text-[9px] font-semibold " + LEAVE_CLASSES.annual}>AL</span><span className={"rounded px-1 text-[9px] font-semibold " + LEAVE_CLASSES.sick}>SL</span><span className={"rounded px-1 text-[9px] font-semibold " + LEAVE_CLASSES.unpaid}>UL</span>{t("shift_cal_legend_leave")}</span>
+          </div>
         </>
       )}
+
+      <Sheet open={Boolean(dayRow)} title={dayRow ? formatDay(dayRow.shift_date, lang, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""} onClose={() => setDayRow(null)}>
+        {dayRow && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><ShiftSummary row={dayRow} t={t} /></div>
+            <div className="flex gap-2">
+              <button onClick={() => setToDelete(dayRow.id)} aria-label={t("delete")} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 text-red-300"><Trash2 size={18} /></button>
+              <button onClick={() => { const r = dayRow; setDayRow(null); openRow(r); }} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black"><Pencil size={16} />{t("shift_edit_title")}</button>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       <ShiftForm
         open={open}

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, ChevronDown } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -21,12 +21,13 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
   const [form, setForm] = useState(blank(defaultDate));
   const [sessionTab, setSessionTab] = useState(1);
   const [peopleTab, setPeopleTab] = useState("partner");
+  const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setError(""); setSessionTab(1); setPeopleTab("partner");
+    setError(""); setSessionTab(1); setPeopleTab("partner"); setShowTemplates(false);
     if (initial) {
       const kind = initial.shift_type === "off" || isLeaveType(initial.shift_type) ? initial.shift_type : "live";
       setForm({
@@ -181,7 +182,19 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
                 })}
               </div>
 
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs text-zinc-400">{t("shift_start")}
+                  <input type="time" value={sess.start} onChange={(e) => setSess({ ...sess, start: e.target.value })} className={inputCls + " mt-1"} />
+                </label>
+                <label className="text-xs text-zinc-400">{t("shift_end")}{dur ? <span className="text-zinc-500"> · {fmtDuration(dur, units)}</span> : null}
+                  <input type="time" value={sess.end} onChange={(e) => setSess({ ...sess, end: e.target.value })} className={inputCls + " mt-1"} />
+                </label>
+              </div>
+              <button type="button" onClick={() => setShowTemplates(!showTemplates)} className="flex w-full items-center justify-center gap-1 text-[11px] text-zinc-400">
+                {showTemplates ? t("shift_hide_templates") : t("shift_show_templates")}<ChevronDown size={12} className={showTemplates ? "rotate-180" : ""} />
+              </button>
+              {showTemplates && (
+                <div className="grid grid-cols-4 gap-1.5">
                 {TIME_TEMPLATES.map(([a, b]) => {
                   const active = sess.start === a && sess.end === b;
                   return (
@@ -191,15 +204,7 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
                   );
                 })}
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-zinc-400">{t("shift_start")}
-                  <input type="time" value={sess.start} onChange={(e) => setSess({ ...sess, start: e.target.value })} className={inputCls + " mt-1"} />
-                </label>
-                <label className="text-xs text-zinc-400">{t("shift_end")}{dur ? <span className="text-zinc-500"> · {fmtDuration(dur, units)}</span> : null}
-                  <input type="time" value={sess.end} onChange={(e) => setSess({ ...sess, end: e.target.value })} className={inputCls + " mt-1"} />
-                </label>
-              </div>
+              )}
               {brk ? <p className="text-center text-xs text-zinc-400">{t("shift_break")} {fmtDuration(brk, units)}</p> : null}
             </div>
 

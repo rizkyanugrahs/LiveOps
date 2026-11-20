@@ -78,7 +78,7 @@ export default function ProductsPage() {
     <li key={p.id}>
       <button onClick={() => setDetail(p)} className="glass flex w-full items-center gap-3 rounded-2xl p-3 text-left active:scale-[0.99]">
         {p.image_path ? (
-          <SignedImage path={p.image_path} className="h-14 w-14 shrink-0 rounded-xl border border-white/10 object-cover" />
+          <SignedImage path={p.image_path} className="h-14 w-14 shrink-0 rounded-xl border border-white/10 bg-white object-contain" />
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5"><Package size={22} className="text-zinc-500" /></div>
         )}
