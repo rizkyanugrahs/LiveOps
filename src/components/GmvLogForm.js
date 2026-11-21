@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2, ArrowUpDown } from "lucide-react";
+import { Loader2, ArrowUpDown, Trash2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -16,10 +16,11 @@ const has = (v) => v !== null && v !== undefined;
 
 // Input GMV harian dalam 2 baris (slot). Badge platform bisa diklik untuk ganti platform,
 // dan urutan bisa ditukar. Dua cara: Manual (angka langsung) atau Selisih (sebelum dan sesudah live).
-export default function GmvLogForm({ onSaved }) {
+export default function GmvLogForm({ onSaved, onCancel, onDelete, initialDate }) {
   const { supabase, user } = useAuth();
   const { t } = useI18n();
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(initialDate || todayStr());
+  const [existing, setExisting] = useState(false);
   const [method, setMethod] = useState("manual");
   const [slots, setSlots] = useState([slot("shopee"), slot("tiktok")]);
   const [partner, setPartner] = useState("");
@@ -40,6 +41,7 @@ export default function GmvLogForm({ onSaved }) {
       if (!active) return;
       const shift = sh.data;
       const e = en.data;
+      setExisting(Boolean(e));
       const shiftPartner = shift && shift.shift_type === "live" && shift.partner ? shift.partner : "";
       setDetected(Boolean(shiftPartner));
       setPartner(shiftPartner || (e && e.partner) || "");
@@ -201,9 +203,15 @@ export default function GmvLogForm({ onSaved }) {
         <span className="mt-1 block text-[11px] text-zinc-500">{detected ? t("gmv_partner_auto") : t("gmv_partner_none")}</span>
       </label>
 
-      <button onClick={save} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-medium text-black disabled:opacity-60">
-        {saving && <Loader2 size={16} className="animate-spin" />}{t("save")}
-      </button>
+      <div className="flex gap-2">
+        {existing && onDelete && (
+          <button type="button" onClick={() => onDelete(date)} aria-label={t("delete")} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 text-red-300"><Trash2 size={17} /></button>
+        )}
+        {onCancel && <button type="button" onClick={onCancel} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-zinc-300">{t("gmve_cancel")}</button>}
+        <button onClick={save} disabled={saving} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-medium text-black disabled:opacity-60">
+          {saving && <Loader2 size={16} className="animate-spin" />}{t("save")}
+        </button>
+      </div>
     </div>
   );
 }

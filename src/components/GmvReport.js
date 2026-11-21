@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Loader2, TrendingUp, TrendingDown, Check } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Loader2, TrendingUp, TrendingDown, Check, Pencil, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -13,6 +13,9 @@ import { jpegToPdf } from "@/lib/pdf";
 import GlassCard from "@/components/GlassCard";
 import Notice from "@/components/Notice";
 import Sheet from "@/components/Sheet";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import GmvLogForm from "@/components/GmvLogForm";
+import { usePartners } from "@/lib/usePartners";
 
 const MODES = [["month", "gmvr_tab_month"], ["range", "gmvr_tab_range"], ["all", "gmvr_tab_all"]];
 
@@ -77,6 +80,11 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [scope, setScope] = useState(""); // "" = semua partner
   const [exporting, setExporting] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [editDate, setEditDate] = useState(null);
+  const [toDelete, setToDelete] = useState(null);
+  const [toast, setToast] = useState(null); // { text, undoRow }
+  const { partners: partnerList } = usePartners();
 
   const range = useMemo(() => {
     if (mode === "month") return monthRange(month);
@@ -103,6 +111,33 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 7000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  async function confirmDelete() {
+    const d = toDelete;
+    setToDelete(null);
+    const row = rows.find((r) => r.entry_date === d);
+    const { error } = await supabase.from("gmv_entries").delete().eq("entry_date", d);
+    if (error) { setMsg(friendlyError(error)); return; }
+    setEditDate(null);
+    setToast({ text: t("gmve_deleted"), undoRow: row || null });
+    load();
+  }
+
+  async function undoDelete() {
+    const row = toast && toast.undoRow;
+    setToast(null);
+    if (!row) return;
+    const { error } = await supabase.from("gmv_entries").upsert(row, { onConflict: "user_id,entry_date" });
+    if (error) { setMsg(friendlyError(error)); return; }
+    setToast({ text: t("gmve_restored"), undoRow: null });
+    load();
+  }
+
   function changeFrom(v) { if (!v) return; setFrom(v); if (to < v) setTo(v); }
   function changeTo(v) { if (!v) return; setTo(v); if (from > v) setFrom(v); }
 
@@ -111,7 +146,13 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
   const chart = useMemo(() => buildSeries(rows, mode, month, from, to), [rows, mode, month, from, to]);
   const chartMax = chart.values.reduce((m, v) => Math.max(m, v), 0);
   const weeks = useMemo(() => (mode === "month" ? weekGroups(rows, month) : []), [rows, mode, month]);
-  const names = useMemo(() => partnerNames(rows), [rows]);
+  const names = useMemo(() => {
+    const set = new Set([...partnerNames(rows), ...partnerList.map((p) => p.name)]);
+    if (scope) set.add(scope);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows, partnerList, scope]);
+  const scopeRows = scope ? filterByPartner(rows, scope) : rows;
+  const scopeEmpty = Boolean(scope) && scopeRows.length === 0;
 
   const pctFmt = new Intl.NumberFormat(lang === "id" ? "id-ID" : "en-GB", { maximumFractionDigits: 1 });
   const prevLabel = targetMonth ? formatDay(shiftMonth(targetMonth, -1) + "-01", lang, { month: "long", year: "numeric" }) : "";
@@ -126,13 +167,14 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
   function openExport() {
     if (!rows.length) { setMsg(t("gmvr_nothing")); return; }
     setScope("");
+    setCustomName("");
     setExportOpen(true);
   }
 
   // Laporan yang diunduh: semua GMV, atau hanya sesi bersama satu partner (semua angka ikut menyesuaikan)
   async function exportReport(kind) {
     const subset = scope ? filterByPartner(rows, scope) : rows;
-    if (!subset.length) { setMsg(t("gmvx_filtered_empty").replace("{name}", scope)); setExportOpen(false); return; }
+    if (!subset.length) return; // tidak ada data: tidak ada file kosong yang dibuat
     setExporting(kind);
     setMsg("");
     try {
@@ -201,6 +243,27 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
       <p className="mt-1 text-sm font-semibold">{value}</p>
     </div>
   );
+  const dayRow = (r) => {
+    const hasShopee = r.shopee_amount !== null && r.shopee_amount !== undefined;
+    const hasTiktok = r.tiktok_amount !== null && r.tiktok_amount !== undefined;
+    return (
+      <li key={r.id || r.entry_date}>
+        <button onClick={() => setEditDate(r.entry_date)} className="flex w-full items-start justify-between gap-3 px-4 py-2.5 text-left active:bg-white/5">
+          <div className="min-w-0">
+            <p className="text-sm">{dayLabel(r.entry_date)}</p>
+            {(hasShopee || hasTiktok || r.partner) && (
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400">
+                {hasShopee && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: PLATFORMS.shopee.hex }} />{formatRupiah(r.shopee_amount)}</span>}
+                {hasTiktok && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full ring-1 ring-white/50" style={{ background: "#000" }} />{formatRupiah(r.tiktok_amount)}</span>}
+                {r.partner && <span className="text-zinc-500">· {r.partner}</span>}
+              </p>
+            )}
+          </div>
+          <span className="flex shrink-0 items-center gap-2 text-sm font-semibold">{formatRupiah(r.amount)}<Pencil size={12} className="text-zinc-600" /></span>
+        </button>
+      </li>
+    );
+  };
   const dayLabel = (d) => formatDay(d, lang, { weekday: "short", day: "numeric", month: "short" });
   const scopeBtn = (value, label) => (
     <button key={value || "all"} onClick={() => setScope(value)} className={"flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm " + (scope === value ? "border-white bg-white font-medium text-black" : "border-white/10 text-zinc-200")}>
@@ -306,9 +369,16 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
             )}
           </GlassCard>
 
+          {mode === "range" && rows.length > 0 && (
+            <GlassCard className="p-0">
+              <p className="px-4 pb-2 pt-4 text-sm font-semibold">{t("gmve_daily_title")}</p>
+              <ul className="divide-y divide-white/5 border-t border-white/5">{[...rows].reverse().map((r) => dayRow(r))}</ul>
+            </GlassCard>
+          )}
+
           {mode === "month" && (
             <div className="space-y-3 pt-1">
-              <p className="px-1 text-xs font-medium uppercase tracking-wide text-zinc-400">{t("gmvw_title")}</p>
+              <div className="px-1"><p className="text-xs font-medium uppercase tracking-wide text-zinc-400">{t("gmvw_title")}</p>{rows.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500">{t("gmve_tap_hint")}</p>}</div>
               {rows.length === 0 ? (
                 <GlassCard className="py-6 text-center text-sm text-zinc-400">{t("gmvw_empty_month")}</GlassCard>
               ) : weeks.map((w) => (
@@ -333,25 +403,7 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
                     <p className="border-t border-white/5 px-4 py-3 text-xs text-zinc-500">{t("gmvw_empty_week")}</p>
                   ) : (
                     <ul className="divide-y divide-white/5 border-t border-white/5">
-                      {w.rows.map((r) => {
-                        const hasShopee = r.shopee_amount !== null && r.shopee_amount !== undefined;
-                        const hasTiktok = r.tiktok_amount !== null && r.tiktok_amount !== undefined;
-                        return (
-                          <li key={r.id || r.entry_date} className="flex items-start justify-between gap-3 px-4 py-2.5">
-                            <div className="min-w-0">
-                              <p className="text-sm">{dayLabel(r.entry_date)}</p>
-                              {(hasShopee || hasTiktok || r.partner) && (
-                                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400">
-                                  {hasShopee && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: PLATFORMS.shopee.hex }} />{formatRupiah(r.shopee_amount)}</span>}
-                                  {hasTiktok && <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full ring-1 ring-white/50" style={{ background: "#000" }} />{formatRupiah(r.tiktok_amount)}</span>}
-                                  {r.partner && <span className="text-zinc-500">· {r.partner}</span>}
-                                </p>
-                              )}
-                            </div>
-                            <p className="shrink-0 text-sm font-semibold">{formatRupiah(r.amount)}</p>
-                          </li>
-                        );
-                      })}
+                      {w.rows.map((r) => dayRow(r))}
                     </ul>
                   )}
                 </GlassCard>
@@ -364,20 +416,48 @@ export default function GmvReport({ refreshKey = 0, backHref }) {
       <Sheet open={exportOpen} title={t("gmvx_title")} onClose={() => !exporting && setExportOpen(false)}>
         <div className="space-y-4">
           <p className="text-xs text-zinc-400">{t("gmvx_scope")}</p>
-          <div className="space-y-2">
+          <div className="max-h-[34vh] space-y-2 overflow-y-auto pr-0.5">
             {scopeBtn("", t("gmvx_all"))}
             {names.map((n) => scopeBtn(n, t("gmvx_partner_only").replace("{name}", n)))}
           </div>
-          {names.length === 0 && <p className="text-[11px] text-zinc-500">{t("gmvx_no_partner_data")}</p>}
+          <div>
+            <p className="mb-1 text-[11px] text-zinc-500">{t("gmvx_other_partner")}</p>
+            <div className="flex gap-2">
+              <input value={customName} onChange={(e) => setCustomName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && customName.trim()) { setScope(customName.trim()); setCustomName(""); } }} placeholder={t("gmvx_other_ph")} className={inputCls} />
+              <button type="button" onClick={() => { if (customName.trim()) { setScope(customName.trim()); setCustomName(""); } }} className="shrink-0 rounded-xl border border-white/10 px-4 text-xs text-zinc-200">{t("gmvx_use")}</button>
+            </div>
+          </div>
+          {scopeEmpty && (
+            <p className="flex items-start gap-2 rounded-xl border border-red-300/30 bg-red-400/10 px-3 py-2.5 text-xs text-red-200"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span>{t("gmvx_empty_block").replace("{name}", scope)}</span></p>
+          )}
           <div className="grid grid-cols-2 gap-2">
             {[["png", t("gmvx_png")], ["pdf", t("gmvx_pdf")]].map(([k, label]) => (
-              <button key={k} onClick={() => exportReport(k)} disabled={Boolean(exporting)} className="flex items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black disabled:opacity-60">
+              <button key={k} onClick={() => exportReport(k)} disabled={Boolean(exporting) || scopeEmpty} className="flex items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black disabled:opacity-40">
                 {exporting === k ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}{label}
               </button>
             ))}
           </div>
         </div>
       </Sheet>
+      <Sheet open={Boolean(editDate)} title={t("gmve_edit_title")} onClose={() => setEditDate(null)} dismissOnBackdrop={false}>
+        {editDate && (
+          <GmvLogForm
+            key={editDate}
+            initialDate={editDate}
+            onCancel={() => setEditDate(null)}
+            onDelete={(d) => setToDelete(d)}
+            onSaved={() => { setEditDate(null); setToast({ text: t("gmv_saved"), undoRow: null }); load(); }}
+          />
+        )}
+      </Sheet>
+      <ConfirmDialog open={Boolean(toDelete)} danger message={toDelete ? t("gmve_delete_confirm").replace("{d}", formatDay(toDelete, lang, { day: "numeric", month: "long", year: "numeric" })) : ""} confirmLabel={t("delete")} onConfirm={confirmDelete} onCancel={() => setToDelete(null)} />
+
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 z-[95] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm shadow-xl">
+          <span>{toast.text}</span>
+          {toast.undoRow && <button onClick={undoDelete} className="shrink-0 font-semibold text-white underline underline-offset-4">{t("gmve_undo")}</button>}
+        </div>
+      )}
     </div>
   );
 }

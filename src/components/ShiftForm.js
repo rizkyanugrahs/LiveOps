@@ -8,7 +8,7 @@ import { usePartners } from "@/lib/usePartners";
 import { TIME_TEMPLATES, TEAM_TEMPLATES, PLATFORMS, LEAVE_TYPES, LEAVE_CLASSES, otherPlatform, fmtTime, durationMinutes, fmtDuration, breakMinutes, sessionsOverlap, isLeaveType } from "@/lib/shifts";
 import Sheet from "@/components/Sheet";
 import Notice from "@/components/Notice";
-import NamePicker from "@/components/NamePicker";
+import PersonPicker from "@/components/PersonPicker";
 
 const blank = (date) => ({ id: null, leave_entry_id: null, shift_date: date, kind: "live", lastLeave: "annual", s1: { start: "", end: "" }, s2: { start: "", end: "" }, first: "shopee", partner: [], team: [], note: "" });
 
@@ -20,14 +20,13 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
   const { partners, defaultPartner } = usePartners();
   const [form, setForm] = useState(blank(defaultDate));
   const [sessionTab, setSessionTab] = useState(1);
-  const [peopleTab, setPeopleTab] = useState("partner");
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setError(""); setSessionTab(1); setPeopleTab("partner"); setShowTemplates(false);
+    setError(""); setSessionTab(1); setShowTemplates(false);
     if (initial) {
       const kind = initial.shift_type === "off" || isLeaveType(initial.shift_type) ? initial.shift_type : "live";
       setForm({
@@ -129,11 +128,12 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
   }
 
   const inputCls = "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none focus:border-white/40";
+  const timeCls = "block w-full min-w-0 max-w-full appearance-none rounded-xl border border-white/10 bg-black/30 px-2.5 py-2.5 text-sm outline-none focus:border-white/40";
   const tabBtn = (active) => "rounded-2xl border p-2.5 text-left transition " + (active ? "border-white bg-white text-black" : "border-white/10 text-zinc-300");
 
   return (
     <Sheet open={open} title={form.id ? t("shift_edit_title") : t("shift_add")} onClose={() => !saving && onClose()}>
-      <div className="space-y-4">
+      <div className="space-y-3.5">
         <Notice>{error}</Notice>
 
         <label className="block text-xs text-zinc-400">{t("shift_date")}
@@ -165,7 +165,7 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
               ))}
             </div>
 
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-2.5">
               <div className="grid grid-cols-2 gap-2">
                 {[1, 2].map((n) => {
                   const plat = PLATFORMS[n === 1 ? p1 : p2];
@@ -183,13 +183,14 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-zinc-400">{t("shift_start")}
-                  <input type="time" value={sess.start} onChange={(e) => setSess({ ...sess, start: e.target.value })} className={inputCls + " mt-1"} />
+                <label className="block min-w-0 text-xs text-zinc-400">{t("shift_start")}
+                  <input type="time" value={sess.start} onChange={(e) => setSess({ ...sess, start: e.target.value })} className={timeCls + " mt-1"} />
                 </label>
-                <label className="text-xs text-zinc-400">{t("shift_end")}{dur ? <span className="text-zinc-500"> · {fmtDuration(dur, units)}</span> : null}
-                  <input type="time" value={sess.end} onChange={(e) => setSess({ ...sess, end: e.target.value })} className={inputCls + " mt-1"} />
+                <label className="block min-w-0 text-xs text-zinc-400"><span className="block truncate">{t("shift_end")}{dur ? <span className="text-zinc-500"> · {fmtDuration(dur, units)}</span> : null}</span>
+                  <input type="time" value={sess.end} onChange={(e) => setSess({ ...sess, end: e.target.value })} className={timeCls + " mt-1"} />
                 </label>
               </div>
+              {brk ? <p className="text-center text-xs text-zinc-400">{t("shift_break")} {fmtDuration(brk, units)}</p> : null}
               <button type="button" onClick={() => setShowTemplates(!showTemplates)} className="flex w-full items-center justify-center gap-1 text-[11px] text-zinc-400">
                 {showTemplates ? t("shift_hide_templates") : t("shift_show_templates")}<ChevronDown size={12} className={showTemplates ? "rotate-180" : ""} />
               </button>
@@ -205,25 +206,11 @@ export default function ShiftForm({ open, initial, defaultDate, onClose, onSaved
                 })}
               </div>
               )}
-              {brk ? <p className="text-center text-xs text-zinc-400">{t("shift_break")} {fmtDuration(brk, units)}</p> : null}
             </div>
 
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setPeopleTab("partner")} className={tabBtn(peopleTab === "partner")}>
-                  <span className="block text-xs font-medium">{t("shift_partner")}</span>
-                  <span className={"mt-0.5 block truncate text-[11px] " + (peopleTab === "partner" ? "text-black/70" : "text-zinc-500")}>{form.partner[0] || t("shift_people_empty")}</span>
-                </button>
-                <button type="button" onClick={() => setPeopleTab("team")} className={tabBtn(peopleTab === "team")}>
-                  <span className="block text-xs font-medium">{t("shift_tab_team")}</span>
-                  <span className={"mt-0.5 block truncate text-[11px] " + (peopleTab === "team" ? "text-black/70" : "text-zinc-500")}>{form.team.length ? form.team.join(", ") : t("shift_people_empty")}</span>
-                </button>
-              </div>
-              {peopleTab === "partner" ? (
-                <NamePicker label={t("shift_partner")} hint={t("shift_partner_note")} names={names} value={form.partner} max={1} onChange={(v) => setForm({ ...form, partner: v })} />
-              ) : (
-                <NamePicker label={t("shift_team")} names={names} value={form.team} max={2} presets={TEAM_TEMPLATES} presetsLabel={t("shift_team_templates")} onChange={(v) => setForm({ ...form, team: v })} />
-              )}
+            <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <PersonPicker label={t("shift_partner")} title={t("shift_pick_partner")} names={names} value={form.partner} max={1} onChange={(v) => setForm({ ...form, partner: v })} />
+              <PersonPicker label={t("shift_team")} title={t("shift_pick_team")} names={names} value={form.team} max={2} presets={TEAM_TEMPLATES} onChange={(v) => setForm({ ...form, team: v })} />
             </div>
           </>
         )}

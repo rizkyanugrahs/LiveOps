@@ -10,8 +10,9 @@ import Sheet from "@/components/Sheet";
 import Notice from "@/components/Notice";
 import SignedImage from "@/components/SignedImage";
 
-const empty = { id: null, name: "", category: "", key_ingredients: "", benefits: "", how_to_use: "", age_range: "", contraindications: "", image_path: null };
+const empty = { id: null, name: "", category: "", key_ingredients: "", benefits: "", how_to_use: "", age_range: "", contraindications: "", skin_types: "", pregnancy_safe: null, pregnancy_note: "", image_path: null };
 const DEFAULT_CATEGORIES = ["Serum", "Sunscreen", "Moisturizer", "Cleanser", "Toner", "Mask"];
+const SKIN_SUGGESTIONS = ["Kulit kering", "Kulit berminyak", "Kulit sensitif", "Kulit kombinasi", "Jerawat", "Flek hitam", "Kulit kusam", "Chicken skin"];
 
 export default function ProductForm({ open, product, categories, onClose, onSaved }) {
   const { supabase, user } = useAuth();
@@ -26,9 +27,15 @@ export default function ProductForm({ open, product, categories, onClose, onSave
 
   useEffect(() => {
     if (!open) return;
-    setForm(product ? { ...empty, ...product, category: product.category || "" } : empty);
+    setForm(product ? { ...empty, ...product, category: product.category || "", skin_types: product.skin_types || "", pregnancy_note: product.pregnancy_note || "", pregnancy_safe: product.pregnancy_safe === true ? true : product.pregnancy_safe === false ? false : null } : empty);
     setFile(null); setPreview(""); setRemovePhoto(false); setError("");
   }, [open, product]);
+
+  function addSkin(text) {
+    const parts = form.skin_types.split(",").map((x) => x.trim()).filter(Boolean);
+    if (parts.some((x) => x.toLowerCase() === text.toLowerCase())) return;
+    setForm({ ...form, skin_types: [...parts, text].join(", ") });
+  }
 
   // pilih foto -> buka editor (latar putih, atur ukuran dan posisi)
   function pickFile(e) {
@@ -70,6 +77,9 @@ export default function ProductForm({ open, product, categories, onClose, onSave
         how_to_use: clean(form.how_to_use),
         age_range: clean(form.age_range),
         contraindications: clean(form.contraindications),
+        skin_types: clean(form.skin_types),
+        pregnancy_safe: form.pregnancy_safe,
+        pregnancy_note: form.pregnancy_safe === null ? null : clean(form.pregnancy_note),
         image_path: imagePath,
       };
       const res = form.id ? await supabase.from("products").update(payload).eq("id", form.id) : await supabase.from("products").insert(payload);
@@ -95,7 +105,7 @@ export default function ProductForm({ open, product, categories, onClose, onSave
 
   return (
     <>
-    <Sheet open={open} title={form.id ? t("prod_edit") : t("prod_add")} onClose={() => !saving && onClose()}>
+    <Sheet open={open} title={form.id ? t("prod_edit") : t("prod_add")} onClose={() => !saving && onClose()} dismissOnBackdrop={false}>
       <div className="space-y-4">
         <Notice>{error}</Notice>
         <label className="block text-xs text-zinc-400">{t("prod_name")}
@@ -112,6 +122,32 @@ export default function ProductForm({ open, product, categories, onClose, onSave
           <input value={form.age_range} onChange={(e) => setForm({ ...form, age_range: e.target.value })} className={inputCls + " mt-1"} />
         </label>
         {field("contraindications", t("prod_contra"), 3, t("prod_contra_hint"))}
+
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <p className="text-xs text-zinc-400">{t("prod_pregnancy")}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[[true, t("prod_preg_safe")], [false, t("prod_preg_unsafe")], [null, t("prod_preg_unset")]].map(([val, label]) => (
+              <button key={String(val)} type="button" onClick={() => setForm({ ...form, pregnancy_safe: val })} className={"rounded-xl border px-1 py-2.5 text-[11px] leading-tight " + (form.pregnancy_safe === val ? (val === false ? "border-red-300 bg-red-400/20 font-medium text-red-200" : val === true ? "border-emerald-300 bg-emerald-400/20 font-medium text-emerald-200" : "border-white bg-white font-medium text-black") : "border-white/10 text-zinc-300")}>{label}</button>
+            ))}
+          </div>
+          {form.pregnancy_safe !== null && (
+            <label className="block text-xs text-zinc-400">{t("prod_preg_note")}
+              <textarea rows={2} value={form.pregnancy_note} onChange={(e) => setForm({ ...form, pregnancy_note: e.target.value })} placeholder={t("prod_preg_note_ph")} className={inputCls + " mt-1"} />
+            </label>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-400">{t("prod_skin")}
+            <input value={form.skin_types} onChange={(e) => setForm({ ...form, skin_types: e.target.value })} placeholder={t("prod_skin_ph")} className={inputCls + " mt-1"} />
+          </label>
+          <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
+            {SKIN_SUGGESTIONS.map((sg) => (
+              <button key={sg} type="button" onClick={() => addSkin(sg)} className="shrink-0 rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-zinc-300">{sg}</button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-zinc-500">{t("prod_skin_hint")}</p>
+        </div>
         <div>
           <p className="text-xs text-zinc-400">{t("task_photo")}</p>
           {(preview || showCurrent) && (
@@ -133,9 +169,12 @@ export default function ProductForm({ open, product, categories, onClose, onSave
             <input type="file" accept="image/*" onChange={pickFile} className="hidden" />
           </label>
         </div>
-        <button onClick={save} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black disabled:opacity-60">
-          {saving && <Loader2 size={16} className="animate-spin" />}{saving ? t("uploading") : t("save")}
-        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => !saving && onClose()} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-zinc-300">{t("cancel")}</button>
+          <button onClick={save} disabled={saving} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-medium text-black disabled:opacity-60">
+            {saving && <Loader2 size={16} className="animate-spin" />}{saving ? t("uploading") : t("save")}
+          </button>
+        </div>
       </div>
     </Sheet>
     {editFile && <ProductPhotoEditor file={editFile} onConfirm={onEdited} onCancel={() => setEditFile(null)} />}

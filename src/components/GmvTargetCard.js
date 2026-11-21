@@ -111,16 +111,19 @@ export default function GmvTargetCard() {
         )}
       </GlassCard>
 
-      <Sheet open={sheet === "target"} title={t("gmv_set_target")} onClose={() => setSheet("")}>
+      <Sheet open={sheet === "target"} title={t("gmv_set_target")} onClose={() => setSheet("")} dismissOnBackdrop={false}>
         <div className="space-y-3">
           <Notice>{targetError}</Notice>
           <input inputMode="numeric" value={targetInput} onChange={(e) => setTargetInput(e.target.value)} placeholder={t("gmv_target") + " (Rp)"} className={inputCls} />
-          <button onClick={saveTarget} className="w-full rounded-xl bg-white py-2.5 text-sm font-medium text-black">{t("save")}</button>
+          <div className="flex gap-2">
+            <button onClick={() => setSheet("")} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-zinc-300">{t("gmve_cancel")}</button>
+            <button onClick={saveTarget} className="flex-1 rounded-xl bg-white py-2.5 text-sm font-medium text-black">{t("save")}</button>
+          </div>
         </div>
       </Sheet>
 
-      <Sheet open={sheet === "log"} title={t("gmv_log")} onClose={() => setSheet("")}>
-        <GmvLogForm onSaved={(key) => { setSheet(""); setMsg({ type: "ok", text: t(key || "gmv_saved") }); load(); }} />
+      <Sheet open={sheet === "log"} title={t("gmv_log")} onClose={() => setSheet("")} dismissOnBackdrop={false}>
+        <GmvLogForm onCancel={() => setSheet("")} onSaved={(key) => { setSheet(""); setMsg({ type: "ok", text: t(key || "gmv_saved") }); load(); }} />
       </Sheet>
     </>
   );

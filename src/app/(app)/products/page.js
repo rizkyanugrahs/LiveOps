@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, X, Plus, Settings2, Loader2, Package, TriangleAlert } from "lucide-react";
+import { Search, X, Plus, Settings2, Loader2, Package, TriangleAlert, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
@@ -50,7 +50,7 @@ export default function ProductsPage() {
   const filtered = products.filter((p) => {
     if (category !== "__all" && catOf(p) !== category) return false;
     if (!q) return true;
-    return [p.name, p.category, p.key_ingredients, p.benefits, p.how_to_use, p.age_range, p.contraindications].some((v) => v && v.toLowerCase().includes(q));
+    return [p.name, p.category, p.key_ingredients, p.benefits, p.how_to_use, p.age_range, p.contraindications, p.skin_types, p.pregnancy_note].some((v) => v && v.toLowerCase().includes(q));
   });
 
   const grouped = useMemo(() => {
@@ -74,6 +74,8 @@ export default function ProductsPage() {
     setMsg({ type: "ok", text: t("prod_deleted") });
   }
 
+  const skinList = (p) => (p.skin_types ? p.skin_types.split(",").map((x) => x.trim()).filter(Boolean) : []);
+
   const card = (p) => (
     <li key={p.id}>
       <button onClick={() => setDetail(p)} className="glass flex w-full items-center gap-3 rounded-2xl p-3 text-left active:scale-[0.99]">
@@ -85,8 +87,17 @@ export default function ProductsPage() {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{p.name}</p>
           <p className="mt-0.5 line-clamp-2 text-xs text-zinc-400">{p.benefits || p.key_ingredients || t("prod_no_info")}</p>
+          {skinList(p).length > 0 && (
+            <p className="mt-1.5 flex flex-wrap gap-1">
+              {skinList(p).slice(0, 3).map((x) => <span key={x} className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-300">{x}</span>)}
+              {skinList(p).length > 3 && <span className="px-1 py-0.5 text-[10px] text-zinc-500">+{skinList(p).length - 3}</span>}
+            </p>
+          )}
         </div>
-        {p.contraindications && <TriangleAlert size={16} className="shrink-0 text-amber-300" />}
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          {p.pregnancy_safe === false && <ShieldAlert size={18} className="text-red-400" aria-label={t("prod_preg_warning")} />}
+          {p.contraindications && <TriangleAlert size={16} className="text-amber-300" />}
+        </div>
       </button>
     </li>
   );

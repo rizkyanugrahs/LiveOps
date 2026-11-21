@@ -1,5 +1,5 @@
 -- =====================================================================
--- LiveOps - SETUP LENGKAP DATABASE (versi 1.8.0)
+-- LiveOps - SETUP LENGKAP DATABASE (versi 1.9.0)
 -- Aman dijalankan berulang kali. Selalu pakai versi terbaru file ini.
 -- =====================================================================
 
@@ -167,6 +167,9 @@ alter table public.gmv_entries add column if not exists tiktok_end numeric;
 alter table public.memories add column if not exists legacy_photo_id uuid;
 alter table public.gmv_entries add column if not exists slots jsonb;
 alter table public.notes add column if not exists image_path text;
+alter table public.products add column if not exists pregnancy_safe boolean;
+alter table public.products add column if not exists pregnancy_note text;
+alter table public.products add column if not exists skin_types text;
 alter table public.gallery_photos alter column image_url drop not null;
 
 -- 8. Aturan unik -----------------------------------------------------

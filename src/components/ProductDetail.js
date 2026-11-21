@@ -1,5 +1,5 @@
 "use client";
-import { Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { Pencil, Trash2, TriangleAlert, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import Sheet from "@/components/Sheet";
 import SignedImage from "@/components/SignedImage";
@@ -17,6 +17,12 @@ export default function ProductDetail({ product, onClose, onEdit, onDelete }) {
     <Sheet open title={product.name} onClose={onClose}>
       <div className="space-y-4">
         {product.category && <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs text-zinc-300">{product.category}</span>}
+        {product.skin_types && (
+          <div>
+            <p className="text-xs uppercase tracking-wide text-zinc-400">{t("prod_skin")}</p>
+            <p className="mt-1.5 flex flex-wrap gap-1.5">{product.skin_types.split(",").map((x) => x.trim()).filter(Boolean).map((x) => <span key={x} className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-xs text-zinc-200">{x}</span>)}</p>
+          </div>
+        )}
         {product.image_path && <SignedImage path={product.image_path} className="h-56 w-full rounded-2xl border border-white/10 bg-white object-contain" />}
         {rows.map(([k, v]) => (
           <div key={k}>
@@ -24,6 +30,18 @@ export default function ProductDetail({ product, onClose, onEdit, onDelete }) {
             <p className={"mt-1 whitespace-pre-wrap text-sm " + (v ? "text-white" : "text-zinc-600")}>{v || t("prod_no_info")}</p>
           </div>
         ))}
+        {product.pregnancy_safe === false && (
+          <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-3">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-red-300"><ShieldAlert size={15} />{t("prod_preg_warning")}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-red-100">{product.pregnancy_note || t("prod_no_info")}</p>
+          </div>
+        )}
+        {product.pregnancy_safe === true && (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-3">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300"><ShieldCheck size={15} />{t("prod_preg_safe")}</p>
+            {product.pregnancy_note && <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-100">{product.pregnancy_note}</p>}
+          </div>
+        )}
         <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-3">
           <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-amber-200"><TriangleAlert size={14} />{t("prod_contra")}</p>
           <p className={"mt-1 whitespace-pre-wrap text-sm " + (product.contraindications ? "text-amber-100" : "text-zinc-500")}>{product.contraindications || t("prod_no_info")}</p>

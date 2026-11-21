@@ -1,5 +1,5 @@
-export const PRODUCT_FIELDS = ["name", "category", "key_ingredients", "benefits", "how_to_use", "age_range", "contraindications"];
-export const PRODUCT_HEADERS = ["Nama produk", "Kategori", "Kandungan utama", "Klaim manfaat", "Cara pakai", "Rentang usia", "Kontraindikasi"];
+export const PRODUCT_FIELDS = ["name", "category", "key_ingredients", "benefits", "how_to_use", "age_range", "contraindications", "skin_types", "pregnancy_safe", "pregnancy_note"];
+export const PRODUCT_HEADERS = ["Nama produk", "Kategori", "Kandungan utama", "Klaim manfaat", "Cara pakai", "Rentang usia", "Kontraindikasi", "Tipe/masalah kulit", "Bumil & Busui Safe (Aman/Tidak)", "Catatan bumil & busui"];
 
 // Membaca CSV (mendukung pemisah koma atau titik koma, tanda kutip, dan baris baru di dalam kutip)
 export function parseCSV(text) {
@@ -61,6 +61,9 @@ export function rowsToProducts(rows) {
     how_to_use: ["cara pakai", "how to use"],
     age_range: ["rentang usia", "usia", "age range", "age"],
     contraindications: ["kontraindikasi", "contraindications", "contraindication"],
+    skin_types: ["tipe/masalah kulit", "tipe kulit", "masalah kulit", "skin types", "skin type"],
+    pregnancy_safe: ["bumil & busui safe (aman/tidak)", "bumil & busui safe", "bumil busui safe", "bumil", "pregnancy safe"],
+    pregnancy_note: ["catatan bumil & busui", "catatan bumil", "pregnancy note"],
   };
   const idx = {};
   PRODUCT_FIELDS.forEach((f, i) => {
@@ -73,4 +76,17 @@ export function rowsToProducts(rows) {
     PRODUCT_FIELDS.forEach((f) => { obj[f] = idx[f] >= 0 ? String(r[idx[f]] || "").trim() : ""; });
     return obj;
   });
+}
+
+// Teks CSV -> true (aman), false (tidak aman), null (kosong / tidak dikenali)
+export function parseSafe(text) {
+  const v = String(text || "").trim().toLowerCase();
+  if (!v) return null;
+  if (["aman", "ya", "yes", "true", "1", "safe"].includes(v)) return true;
+  if (["tidak", "tidak aman", "no", "false", "0", "not safe", "unsafe"].includes(v)) return false;
+  return null;
+}
+
+export function safeToText(value) {
+  return value === true ? "Aman" : value === false ? "Tidak" : "";
 }

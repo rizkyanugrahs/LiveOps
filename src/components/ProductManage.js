@@ -4,7 +4,7 @@ import { Plus, Upload, Download, FileText, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { friendlyError } from "@/lib/supabase";
-import { parseCSV, rowsToProducts, toCSV, downloadText, PRODUCT_FIELDS, PRODUCT_HEADERS } from "@/lib/csv";
+import { parseCSV, rowsToProducts, toCSV, downloadText, parseSafe, safeToText, PRODUCT_FIELDS, PRODUCT_HEADERS } from "@/lib/csv";
 import Sheet from "@/components/Sheet";
 import Notice from "@/components/Notice";
 
@@ -20,11 +20,11 @@ export default function ProductManage({ open, products, onClose, onAdd, onImport
 
   function exportCsv() {
     if (!products.length) { setMsg({ type: "error", text: t("prod_export_empty") }); return; }
-    const rows = [PRODUCT_HEADERS, ...products.map((p) => PRODUCT_FIELDS.map((f) => p[f] || ""))];
+    const rows = [PRODUCT_HEADERS, ...products.map((p) => PRODUCT_FIELDS.map((f) => (f === "pregnancy_safe" ? safeToText(p[f]) : p[f] || "")))];
     downloadText("liveops-produk.csv", toCSV(rows));
   }
   function template() {
-    downloadText("liveops-template-produk.csv", toCSV([PRODUCT_HEADERS, ["Contoh Serum Brightening", "Serum", "Niacinamide, Vitamin C", "Mencerahkan kulit", "Pakai 2x sehari setelah toner", "17+ tahun", "Jangan digabung dengan retinol"]]));
+    downloadText("liveops-template-produk.csv", toCSV([PRODUCT_HEADERS, ["Contoh Serum Brightening", "Serum", "Niacinamide, Vitamin C", "Mencerahkan kulit", "Pakai 2x sehari setelah toner", "17+ tahun", "Jangan digabung dengan retinol", "Kulit kusam, Flek hitam", "Aman", ""]]));
   }
 
   async function pickFile(e) {
@@ -51,6 +51,9 @@ export default function ProductManage({ open, products, onClose, onAdd, onImport
           how_to_use: r.how_to_use || null,
           age_range: r.age_range || null,
           contraindications: r.contraindications || null,
+          skin_types: r.skin_types || null,
+          pregnancy_safe: parseSafe(r.pregnancy_safe),
+          pregnancy_note: r.pregnancy_note || null,
         });
       }
       if (!ready.length) { setMsg({ type: "error", text: t("prod_import_empty") }); setPending(null); return; }
